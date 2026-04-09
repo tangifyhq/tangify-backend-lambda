@@ -80,7 +80,7 @@ func handler(ctx context.Context, request events.LambdaFunctionURLRequest) (even
 		}
 	}
 
-	if method == "GET" && route == "/health" {
+	if method == "GET" && route == "/api/v1/health" {
 		return ApiResponse.Success(map[string]string{"status": "ok"}), nil
 	}
 
