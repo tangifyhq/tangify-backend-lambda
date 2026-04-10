@@ -1,0 +1,31 @@
+{
+  "TableName": "tangify_orders",
+  "BillingMode": "PAY_PER_REQUEST",
+  "AttributeDefinitions": [
+    { "AttributeName": "id", "AttributeType": "S" },
+    { "AttributeName": "session_id", "AttributeType": "S" },
+    { "AttributeName": "ordered_at", "AttributeType": "N" },
+    { "AttributeName": "venue_id", "AttributeType": "S" }
+  ],
+  "KeySchema": [
+    { "AttributeName": "id", "KeyType": "HASH" }
+  ],
+  "GlobalSecondaryIndexes": [
+    {
+      "IndexName": "GSI_SessionOrdered",
+      "KeySchema": [
+        { "AttributeName": "session_id", "KeyType": "HASH" },
+        { "AttributeName": "ordered_at", "KeyType": "RANGE" }
+      ],
+      "Projection": { "ProjectionType": "ALL" }
+    },
+    {
+      "IndexName": "GSI_VenueOrdered",
+      "KeySchema": [
+        { "AttributeName": "venue_id", "KeyType": "HASH" },
+        { "AttributeName": "ordered_at", "KeyType": "RANGE" }
+      ],
+      "Projection": { "ProjectionType": "ALL" }
+    }
+  ]
+}
