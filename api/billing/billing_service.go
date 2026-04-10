@@ -531,5 +531,3 @@ func (s *Service) PatchOrderKitchenStatus(ctx context.Context, req PatchOrderKit
 	}
 	return o, nil
 }
-
-// Remove duplicate broken UpdateOrder - delete the first UpdateOrder that returns error

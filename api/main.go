@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -58,6 +59,20 @@ func doJwtAuth(request events.LambdaFunctionURLRequest, jwtSecret string, appCon
 	return nil
 }
 
+func queryParam(request events.LambdaFunctionURLRequest, key string) string {
+	if request.QueryStringParameters == nil {
+		return ""
+	}
+	return request.QueryStringParameters[key]
+}
+
+func staffIDFromContext(app *AppContext) string {
+	if app == nil || app.JWTClaims == nil {
+		return ""
+	}
+	return fmt.Sprintf("%s::%s", app.JWTClaims.Name, app.JWTClaims.Identity)
+}
+
 func handler(ctx context.Context, request events.LambdaFunctionURLRequest) (events.LambdaFunctionURLResponse, error) {
 	awsUtils := NewAwsUtils()
 	route := request.RawPath
@@ -66,7 +81,6 @@ func handler(ctx context.Context, request events.LambdaFunctionURLRequest) (even
 	appContext := NewAppContext(nil)
 	commonUtils := NewCommonUtils()
 
-	// if route not in whitelist, do jwt auth
 	if !slices.Contains(whitelistedRoutes, route) {
 		jwtSecret, err := awsUtils.GetSSMParameter(ctx, "tangify.jwt.secret")
 		if err != nil {
@@ -84,7 +98,6 @@ func handler(ctx context.Context, request events.LambdaFunctionURLRequest) (even
 		return ApiResponse.Success(map[string]string{"status": "ok"}), nil
 	}
 
-	// GET /menu - fetch menu items from Google Sheets
 	if method == "GET" && route == "/api/v1/menu" {
 		apiKey := os.Getenv("GOOGLE_SHEETS_API_KEY")
 		sheetID := os.Getenv("GOOGLE_SHEET_ID")
@@ -106,42 +119,154 @@ func handler(ctx context.Context, request events.LambdaFunctionURLRequest) (even
 		return ApiResponse.Error(http.StatusInternalServerError, "Server error: Failed to get DynamoDB client"), nil
 	}
 	billingService := billing.NewService(billing.NewRepository(dynamoDBClient))
+	staffID := staffIDFromContext(appContext)
 
-	// create order
-	if method == "POST" && route == "/api/v1/billing/order" {
-		var addOrderRequest billing.AddOrderRequestType
-		err = json.Unmarshal([]byte(request.Body), &addOrderRequest)
+	// --- Waiter / billing ---
+	if method == "GET" && route == "/api/v1/billing/live-orders" {
+		data, err := billingService.LiveOrdersGrouped(ctx, queryParam(request, "venue_id"))
 		if err != nil {
-			fmt.Println("error validating add order request: ", err)
-			return ApiResponse.BadRequest("Invalid add order request"), nil
+			return ApiResponse.Error(http.StatusInternalServerError, err.Error()), nil
 		}
-		staffID := fmt.Sprintf("%s::%s", appContext.JWTClaims.Name, appContext.JWTClaims.Identity)
+		return ApiResponse.Success(data), nil
+	}
 
-		prefixOrder := billing.PrefixOrder
-		orderID := commonUtils.GenerateUniqueID(&prefixOrder)
-		totalPrice := int64(0)
-		readyAt := int64(0)
-		completedAt := int64(0)
-		updatedAt := commonUtils.GetCurrentTimestamp()
-		pending := billing.PaymentStatusPending
-		bill, err := billingService.AddOrderToBill(ctx, addOrderRequest.BillID, &billing.OrderType{
-			ID:          &orderID,
-			Items:       &addOrderRequest.Items,
-			TableID:     addOrderRequest.TableID,
-			CustomerID:  addOrderRequest.CustomerID,
-			StaffID:     &staffID,
-			TotalPrice:  &totalPrice,
-			Status:      &pending,
-			OrderedAt:   addOrderRequest.OrderedAt,
-			ReadyAt:     &readyAt,
-			CompletedAt: &completedAt,
-			UpdatedAt:   &updatedAt,
-		}, commonUtils)
-		if err != nil {
-			fmt.Println("error adding order to bill: ", err)
-			return ApiResponse.Error(http.StatusInternalServerError, "Error adding order to bill: "+err.Error()), nil
+	if method == "POST" && route == "/api/v1/billing/sessions" {
+		var body billing.CreateSessionAndFirstOrderRequest
+		if err := json.Unmarshal([]byte(request.Body), &body); err != nil {
+			return ApiResponse.BadRequest("Invalid JSON body"), nil
 		}
-		return ApiResponse.Success(bill), nil
+		data, err := billingService.CreateSessionAndFirstOrder(ctx, body, staffID, commonUtils)
+		if err != nil {
+			return ApiResponse.Error(http.StatusBadRequest, err.Error()), nil
+		}
+		return ApiResponse.Success(data), nil
+	}
+
+	if method == "POST" && route == "/api/v1/billing/orders" {
+		var body billing.AddOrderToSessionRequest
+		if err := json.Unmarshal([]byte(request.Body), &body); err != nil {
+			return ApiResponse.BadRequest("Invalid JSON body"), nil
+		}
+		data, err := billingService.AddOrder(ctx, body, staffID, commonUtils)
+		if err != nil {
+			return ApiResponse.Error(http.StatusBadRequest, err.Error()), nil
+		}
+		return ApiResponse.Success(data), nil
+	}
+
+	if method == "PATCH" && route == "/api/v1/billing/orders" {
+		var body billing.UpdateOrderRequestV2
+		if err := json.Unmarshal([]byte(request.Body), &body); err != nil {
+			return ApiResponse.BadRequest("Invalid JSON body"), nil
+		}
+		data, err := billingService.UpdateOrderWithClock(ctx, body, commonUtils)
+		if err != nil {
+			return ApiResponse.Error(http.StatusBadRequest, err.Error()), nil
+		}
+		return ApiResponse.Success(data), nil
+	}
+
+	if method == "GET" && route == "/api/v1/billing/orders" {
+		sid := queryParam(request, "session_id")
+		tid := queryParam(request, "table_id")
+		if sid != "" {
+			data, err := billingService.ListOrdersBySession(ctx, sid)
+			if err != nil {
+				return ApiResponse.Error(http.StatusInternalServerError, err.Error()), nil
+			}
+			return ApiResponse.Success(data), nil
+		}
+		if tid != "" {
+			data, err := billingService.ListOrdersByTable(ctx, queryParam(request, "venue_id"), tid)
+			if err != nil {
+				return ApiResponse.Error(http.StatusInternalServerError, err.Error()), nil
+			}
+			return ApiResponse.Success(data), nil
+		}
+		return ApiResponse.BadRequest("session_id or table_id query param required"), nil
+	}
+
+	if method == "POST" && route == "/api/v1/billing/bills/start" {
+		var body billing.StartBillForSessionRequest
+		if err := json.Unmarshal([]byte(request.Body), &body); err != nil {
+			return ApiResponse.BadRequest("Invalid JSON body"), nil
+		}
+		data, err := billingService.StartBill(ctx, body, staffID, commonUtils)
+		if err != nil {
+			return ApiResponse.Error(http.StatusBadRequest, err.Error()), nil
+		}
+		return ApiResponse.Success(data), nil
+	}
+
+	if method == "PATCH" && route == "/api/v1/billing/bills" {
+		var body billing.UpdateBillRequestV2
+		if err := json.Unmarshal([]byte(request.Body), &body); err != nil {
+			return ApiResponse.BadRequest("Invalid JSON body"), nil
+		}
+		data, err := billingService.UpdateBill(ctx, body, commonUtils)
+		if err != nil {
+			return ApiResponse.Error(http.StatusBadRequest, err.Error()), nil
+		}
+		return ApiResponse.Success(data), nil
+	}
+
+	if method == "POST" && route == "/api/v1/billing/sessions/close" {
+		var body billing.CloseTableRequest
+		if err := json.Unmarshal([]byte(request.Body), &body); err != nil {
+			return ApiResponse.BadRequest("Invalid JSON body"), nil
+		}
+		if err := billingService.CloseTable(ctx, body, commonUtils); err != nil {
+			return ApiResponse.Error(http.StatusBadRequest, err.Error()), nil
+		}
+		return ApiResponse.Success(map[string]string{"status": "closed"}), nil
+	}
+
+	// --- Kitchen ---
+	if method == "GET" && route == "/api/v1/kitchen/item-board" {
+		data, err := billingService.KitchenItemBoard(ctx, queryParam(request, "venue_id"))
+		if err != nil {
+			return ApiResponse.Error(http.StatusInternalServerError, err.Error()), nil
+		}
+		return ApiResponse.Success(data), nil
+	}
+
+	if method == "PATCH" && route == "/api/v1/kitchen/line-items/status" {
+		var body billing.PatchLineItemStatusRequest
+		if err := json.Unmarshal([]byte(request.Body), &body); err != nil {
+			return ApiResponse.BadRequest("Invalid JSON body"), nil
+		}
+		data, err := billingService.PatchLineItemStatus(ctx, body, commonUtils)
+		if err != nil {
+			return ApiResponse.Error(http.StatusBadRequest, err.Error()), nil
+		}
+		return ApiResponse.Success(data), nil
+	}
+
+	// --- Plating ---
+	if method == "GET" && route == "/api/v1/plating/orders" {
+		limit := 100
+		if ls := queryParam(request, "limit"); ls != "" {
+			if n, e := strconv.Atoi(ls); e == nil && n > 0 {
+				limit = n
+			}
+		}
+		data, err := billingService.PlatingFIFO(ctx, queryParam(request, "venue_id"), queryParam(request, "table_id"), queryParam(request, "session_id"), limit)
+		if err != nil {
+			return ApiResponse.Error(http.StatusBadRequest, err.Error()), nil
+		}
+		return ApiResponse.Success(data), nil
+	}
+
+	if method == "PATCH" && route == "/api/v1/plating/orders/status" {
+		var body billing.PatchOrderKitchenStatusRequestV2
+		if err := json.Unmarshal([]byte(request.Body), &body); err != nil {
+			return ApiResponse.BadRequest("Invalid JSON body"), nil
+		}
+		data, err := billingService.PatchOrderKitchenStatus(ctx, body, commonUtils)
+		if err != nil {
+			return ApiResponse.Error(http.StatusBadRequest, err.Error()), nil
+		}
+		return ApiResponse.Success(data), nil
 	}
 
 	return ApiResponse.Success(map[string]string{"message": "Hello, World!"}), nil
