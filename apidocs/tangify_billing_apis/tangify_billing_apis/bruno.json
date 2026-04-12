@@ -1,0 +1,9 @@
+{
+  "version": "1",
+  "name": "tangify_billing_apis",
+  "type": "collection",
+  "ignore": [
+    "node_modules",
+    ".git"
+  ]
+}

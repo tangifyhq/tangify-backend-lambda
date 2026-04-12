@@ -9,12 +9,14 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 
 	"tangify-backend-lambda/billing"
 	"tangify-backend-lambda/menu"
+	"tangify-backend-lambda/users"
 )
 
 func getJwtClaims(jwtToken string, jwtSecret string) (*MyClaims, error) {
@@ -28,6 +30,7 @@ func getJwtClaims(jwtToken string, jwtSecret string) (*MyClaims, error) {
 
 var whitelistedRoutes = []string{
 	"/api/v1/auth/login",
+	"/api/v1/users/bootstrap",
 	"/api/v1/menu",
 	"/api/v1/health",
 }
@@ -73,6 +76,19 @@ func staffIDFromContext(app *AppContext) string {
 	return fmt.Sprintf("%s::%s", app.JWTClaims.Name, app.JWTClaims.Identity)
 }
 
+func headerGet(headers map[string]string, key string) string {
+	if headers == nil {
+		return ""
+	}
+	lk := strings.ToLower(key)
+	for k, v := range headers {
+		if strings.ToLower(k) == lk {
+			return v
+		}
+	}
+	return ""
+}
+
 func handler(ctx context.Context, request events.LambdaFunctionURLRequest) (events.LambdaFunctionURLResponse, error) {
 	awsUtils := NewAwsUtils()
 	route := request.RawPath
@@ -80,19 +96,6 @@ func handler(ctx context.Context, request events.LambdaFunctionURLRequest) (even
 	fmt.Println("method & route: ", method, route)
 	appContext := NewAppContext(nil)
 	commonUtils := NewCommonUtils()
-
-	if !slices.Contains(whitelistedRoutes, route) {
-		jwtSecret, err := awsUtils.GetSSMParameter(ctx, "tangify.jwt.secret")
-		if err != nil {
-			fmt.Println("error getting JWT secret: ", err)
-			return ApiResponse.Error(http.StatusInternalServerError, "Server error: Failed to get JWT secret"), nil
-		}
-
-		err = doJwtAuth(request, jwtSecret, appContext)
-		if err != nil {
-			return ApiResponse.Unauthorized(fmt.Sprintf("Unauthorized: %v", err)), nil
-		}
-	}
 
 	if method == "GET" && route == "/api/v1/health" {
 		return ApiResponse.Success(map[string]string{"status": "ok"}), nil
@@ -118,8 +121,100 @@ func handler(ctx context.Context, request events.LambdaFunctionURLRequest) (even
 		fmt.Println("error getting DynamoDB client: ", err)
 		return ApiResponse.Error(http.StatusInternalServerError, "Server error: Failed to get DynamoDB client"), nil
 	}
+
+	jwtSecret, err := awsUtils.GetSSMParameter(ctx, "tangify.jwt.secret")
+	if err != nil {
+		fmt.Println("error getting JWT secret: ", err)
+		return ApiResponse.Error(http.StatusInternalServerError, "Server error: Failed to get JWT secret"), nil
+	}
+
+	usersService := users.NewService(users.NewRepository(dynamoDBClient), func(userID, name, role string) (string, error) {
+		j := NewJwtUtils(jwtSecret)
+		return j.GenerateJWT(userID, name, role, 24*time.Hour)
+	})
+
+	if method == "POST" && route == "/api/v1/auth/login" {
+		var body users.LoginRequest
+		if err := json.Unmarshal([]byte(request.Body), &body); err != nil {
+			return ApiResponse.BadRequest("Invalid JSON body"), nil
+		}
+		data, err := usersService.Login(ctx, body)
+		if err != nil {
+			return ApiResponse.Error(http.StatusUnauthorized, err.Error()), nil
+		}
+		return ApiResponse.Success(data), nil
+	}
+
+	if method == "POST" && route == "/api/v1/users/bootstrap" {
+		want := strings.TrimSpace(os.Getenv("TANGIFY_BOOTSTRAP_SECRET"))
+		if want == "" {
+			return ApiResponse.Error(http.StatusForbidden, "Bootstrap is not configured"), nil
+		}
+		if strings.TrimSpace(headerGet(request.Headers, "X-Bootstrap-Secret")) != want {
+			return ApiResponse.Unauthorized("Invalid bootstrap secret"), nil
+		}
+		var body users.BootstrapUserRequest
+		if err := json.Unmarshal([]byte(request.Body), &body); err != nil {
+			return ApiResponse.BadRequest("Invalid JSON body"), nil
+		}
+		data, err := usersService.BootstrapFirstUser(ctx, body, commonUtils.GetCurrentTimestamp())
+		if err != nil {
+			return ApiResponse.Error(http.StatusBadRequest, err.Error()), nil
+		}
+		return ApiResponse.Success(data), nil
+	}
+
+	if !slices.Contains(whitelistedRoutes, route) {
+		err = doJwtAuth(request, jwtSecret, appContext)
+		if err != nil {
+			return ApiResponse.Unauthorized(fmt.Sprintf("Unauthorized: %v", err)), nil
+		}
+	}
+
 	billingService := billing.NewService(billing.NewRepository(dynamoDBClient))
 	staffID := staffIDFromContext(appContext)
+
+	// --- Users (JWT) ---
+	if method == "GET" && route == "/api/v1/users/me" {
+		u, err := usersService.GetByID(ctx, appContext.JWTClaims.Identity)
+		if err != nil {
+			return ApiResponse.Error(http.StatusInternalServerError, err.Error()), nil
+		}
+		if u == nil {
+			return ApiResponse.Error(http.StatusNotFound, "user not found"), nil
+		}
+		return ApiResponse.Success(u), nil
+	}
+
+	if method == "POST" && route == "/api/v1/users" {
+		if appContext.JWTClaims.Role != users.RoleAdmin {
+			return ApiResponse.Error(http.StatusForbidden, "admin only"), nil
+		}
+		var body users.CreateUserRequest
+		if err := json.Unmarshal([]byte(request.Body), &body); err != nil {
+			return ApiResponse.BadRequest("Invalid JSON body"), nil
+		}
+		data, err := usersService.CreateUser(ctx, body, commonUtils.GetCurrentTimestamp())
+		if err != nil {
+			return ApiResponse.Error(http.StatusBadRequest, err.Error()), nil
+		}
+		return ApiResponse.Success(data), nil
+	}
+
+	if method == "PATCH" && route == "/api/v1/users/password" {
+		var body users.ChangePasswordRequest
+		if err := json.Unmarshal([]byte(request.Body), &body); err != nil {
+			return ApiResponse.BadRequest("Invalid JSON body"), nil
+		}
+		if err := usersService.ChangePassword(ctx, appContext.JWTClaims.Identity, appContext.JWTClaims.Role, body, commonUtils.GetCurrentTimestamp()); err != nil {
+			st := http.StatusBadRequest
+			if strings.Contains(err.Error(), "forbidden") {
+				st = http.StatusForbidden
+			}
+			return ApiResponse.Error(st, err.Error()), nil
+		}
+		return ApiResponse.Success(map[string]string{"status": "ok"}), nil
+	}
 
 	// --- Waiter / billing ---
 	if method == "GET" && route == "/api/v1/billing/live-orders" {

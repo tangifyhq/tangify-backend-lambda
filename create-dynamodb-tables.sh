@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Create billing v2 DynamoDB tables (sessions, orders, bills) via AWS CLI.
-# Matches shapes in api/billing/billing_models_v2.go — item attributes must include
+# Create DynamoDB tables used by the API: billing (sessions, orders, bills) and users.
+# Billing shapes match api/billing/billing_models_v2.go — item attributes must include
 # GSI key fields (e.g. venue_id, opened_at on sessions; venue_id on orders).
+# Users table shape is dynamodb/users/tangify_users.json (see api/users/).
 #
 # Usage:
-#   ./create-dynamodb-billing-tables-v2.sh                    # AWS default endpoint / credentials
-#   ENDPOINT_URL=http://localhost:8000 ./create-dynamodb-billing-tables-v2.sh   # DynamoDB Local
+#   ./create-dynamodb-tables.sh                    # AWS default endpoint / credentials
+#   ENDPOINT_URL=http://localhost:8000 ./create-dynamodb-tables.sh   # DynamoDB Local
 #
 # Env:
 #   ENDPOINT_URL  — if set, passed to --endpoint-url (e.g. http://localhost:8000)
@@ -15,7 +16,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-JSON_DIR="${SCRIPT_DIR}/dynamodb/billing"
+BILLING_JSON_DIR="${SCRIPT_DIR}/dynamodb/billing"
+USERS_JSON_DIR="${SCRIPT_DIR}/dynamodb/users"
 
 REGION="${AWS_REGION:-ap-south-1}"
 export AWS_DEFAULT_REGION="${REGION}"
@@ -40,8 +42,9 @@ table_exists() {
 }
 
 create_one() {
-  local name="$1"
-  local file="${JSON_DIR}/${name}.json"
+  local json_dir="$1"
+  local name="$2"
+  local file="${json_dir}/${name}.json"
   if [[ ! -f "${file}" ]]; then
     echo "error: missing ${file}" >&2
     exit 1
@@ -58,12 +61,13 @@ create_one() {
   aws_ddb create-table --cli-input-json "file://${file}"
 }
 
-create_one tangify_sessions
-create_one tangify_orders
-create_one tangify_bills
+create_one "${BILLING_JSON_DIR}" tangify_sessions
+create_one "${BILLING_JSON_DIR}" tangify_orders
+create_one "${BILLING_JSON_DIR}" tangify_bills
+create_one "${USERS_JSON_DIR}" tangify_users
 
 echo ""
-echo "Done. Tables: tangify_sessions, tangify_orders, tangify_bills"
+echo "Done. Tables: tangify_sessions, tangify_orders, tangify_bills, tangify_users"
 if [[ -n "${ENDPOINT_URL:-}" ]]; then
   echo "List: aws dynamodb list-tables --endpoint-url \"${ENDPOINT_URL}\" --region ${REGION}"
 else
