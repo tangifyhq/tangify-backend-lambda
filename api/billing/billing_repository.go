@@ -268,6 +268,12 @@ func encodeOrder(o *Order) (map[string]types.AttributeValue, error) {
 			"price":    &types.AttributeValueMemberN{Value: strconv.FormatInt(li.Price, 10)},
 			"status":   &types.AttributeValueMemberS{Value: li.Status},
 		}
+		if li.UserOverrride != nil {
+			im["user_overrride"] = &types.AttributeValueMemberN{Value: strconv.FormatInt(*li.UserOverrride, 10)}
+		}
+		if li.Removed {
+			im["removed"] = &types.AttributeValueMemberBOOL{Value: true}
+		}
 		items = append(items, &types.AttributeValueMemberM{Value: im})
 	}
 	m := map[string]types.AttributeValue{
@@ -353,6 +359,14 @@ func decodeOrder(item map[string]types.AttributeValue) (*Order, error) {
 			}
 			li.Quantity, _ = atoiAttr(m.Value, "quantity")
 			li.Price, _ = numAttr(m.Value, "price")
+			if n, ok := m.Value["user_overrride"].(*types.AttributeValueMemberN); ok {
+				if p, err := strconv.ParseInt(n.Value, 10, 64); err == nil {
+					li.UserOverrride = &p
+				}
+			}
+			if b, ok := m.Value["removed"].(*types.AttributeValueMemberBOOL); ok {
+				li.Removed = b.Value
+			}
 			if s, ok := m.Value["status"].(*types.AttributeValueMemberS); ok {
 				li.Status = s.Value
 			}

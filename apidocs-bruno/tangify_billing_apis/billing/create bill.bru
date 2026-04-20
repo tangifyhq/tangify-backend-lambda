@@ -1,0 +1,74 @@
+meta {
+  name: create bill
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{api_url}}/api/v1/billing/bills/start
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "session_id": "sess_b39e48cb-65fd-4b02-a834-22de49c62fd3"
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
+
+example {
+  name: success
+  
+  request: {
+    url: {{api_url}}/api/v1/billing/bills/start
+    method: POST
+    mode: json
+    body:json: {
+      {
+        "session_id": "sess_b39e48cb-65fd-4b02-a834-22de49c62fd3"
+      }
+    }
+  }
+  
+  response: {
+    headers: {
+      date: Mon, 20 Apr 2026 15:13:12 GMT
+      content-type: application/json
+      content-length: 369
+      connection: keep-alive
+      x-amzn-requestid: 2da87432-7e81-4dab-909a-7c522fecd3ad
+      x-amzn-trace-id: Root=1-69e64288-015bd9ea377478e916a757d2;Sampled=1;Lineage=1:f3c3df5e:0
+    }
+  
+    status: {
+      code: 200
+      text: OK
+    }
+  
+    body: {
+      type: json
+      content: '''
+        {
+          "id": "bill_6b11733c-9f51-4c7d-8e61-012940141d68",
+          "session_id": "sess_b39e48cb-65fd-4b02-a834-22de49c62fd3",
+          "table_ids": [
+            "T5"
+          ],
+          "staff_id": "happy::9043da61-8fc6-4f8d-b9b2-b0574a5fb6fc",
+          "payment_method": "cash",
+          "payment_status": "pending",
+          "created_at": 1776697992641,
+          "updated_at": 1776697992689,
+          "total_tax_in_paise": 0,
+          "total_discount_in_paise": 0,
+          "total_amount_in_paise": 44000
+        }
+      '''
+    }
+  }
+}

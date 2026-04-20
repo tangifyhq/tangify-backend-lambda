@@ -45,11 +45,13 @@ const (
 
 // LineItem is one row on a ticket; each line has its own kitchen status.
 type LineItem struct {
-	ID       string `json:"id"` // stable id for PATCH item status
-	Name     string `json:"name"`
-	Quantity int    `json:"quantity"`
-	Price    int64  `json:"price"` // paise (per line or per unit — document in API)
-	Status   string `json:"status"` // LineItemStatus*
+	ID            string `json:"id"` // stable id for PATCH item status
+	Name          string `json:"name"`
+	Quantity      int    `json:"quantity"`
+	Price         int64  `json:"price"` // paise (per line or per unit — document in API)
+	UserOverrride *int64 `json:"user_overrride,omitempty"` // billing-time manual override (paise)
+	Removed       bool   `json:"removed,omitempty"`        // soft-remove line from billing/order
+	Status        string `json:"status"`                   // LineItemStatus*
 }
 
 // --- Order-level kitchen / plating (FIFO by table uses order + ordered_at) ---
@@ -153,10 +155,11 @@ type AddOrderToSessionRequest struct {
 }
 
 type UpdateOrderRequestV2 struct {
-	OrderID       string     `json:"order_id"`
-	Items         []LineItem `json:"items,omitempty"`
-	TotalPrice    *int64     `json:"total_price,omitempty"`
-	KitchenStatus *string    `json:"kitchen_status,omitempty"`
+	OrderID            string     `json:"order_id"`
+	Items              []LineItem `json:"items,omitempty"`
+	TotalPrice         *int64     `json:"total_price,omitempty"`
+	KitchenStatus      *string    `json:"kitchen_status,omitempty"`
+	RemoveLineItemIDs  []string   `json:"remove_line_item_ids,omitempty"`
 }
 
 type PatchLineItemStatusRequest struct {
@@ -181,12 +184,19 @@ type StartBillForSessionRequest struct {
 
 type UpdateBillRequestV2 struct {
 	BillID        string         `json:"bill_id"`
-	Discounts     []DiscountType `json:"discounts,omitempty"`
-	Taxes         []TaxType      `json:"taxes,omitempty"`
 	PaymentMethod *string        `json:"payment_method,omitempty"`
 	PaymentStatus *string        `json:"payment_status,omitempty"`
+	LineItemUpdates []BillLineItemUpdate `json:"line_item_updates,omitempty"`
 	// Totals may be server-calculated from orders; optional overrides if you allow
 	TotalAmountInPaise *int64 `json:"total_amount_in_paise,omitempty"`
+}
+
+type BillLineItemUpdate struct {
+	OrderID       string `json:"order_id"`
+	LineItemID    string `json:"line_item_id"`
+	Quantity      *int   `json:"quantity,omitempty"`
+	UserOverrride *int64 `json:"user_overrride,omitempty"`
+	Removed       *bool  `json:"removed,omitempty"`
 }
 
 type CloseTableRequest struct {

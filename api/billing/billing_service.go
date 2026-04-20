@@ -45,7 +45,14 @@ func defaultVenueID() string {
 func sumLineItems(items []LineItem) int64 {
 	var t int64
 	for _, li := range items {
-		t += li.Price * int64(li.Quantity)
+		if li.Removed {
+			continue
+		}
+		price := li.Price
+		if li.UserOverrride != nil {
+			price = *li.UserOverrride
+		}
+		t += price * int64(li.Quantity)
 	}
 	return t
 }
@@ -295,6 +302,21 @@ func (s *Service) UpdateOrderWithClock(ctx context.Context, req UpdateOrderReque
 		o.KitchenStatus = *req.KitchenStatus
 		applyKitchenStatusToAllLineItems(o.Items, *req.KitchenStatus)
 	}
+	if len(req.RemoveLineItemIDs) > 0 {
+		toRemove := make(map[string]struct{}, len(req.RemoveLineItemIDs))
+		for _, id := range req.RemoveLineItemIDs {
+			if id != "" {
+				toRemove[id] = struct{}{}
+			}
+		}
+		for i := range o.Items {
+			if _, ok := toRemove[o.Items[i].ID]; ok {
+				o.Items[i].Removed = true
+				o.Items[i].Status = LineItemStatusCancelled
+			}
+		}
+		o.TotalPrice = sumLineItems(o.Items)
+	}
 	if req.TotalPrice != nil {
 		o.TotalPrice = *req.TotalPrice
 	}
@@ -400,18 +422,67 @@ func (s *Service) UpdateBill(ctx context.Context, req UpdateBillRequestV2, clock
 	if b == nil {
 		return nil, fmt.Errorf("bill not found")
 	}
-	if len(req.Discounts) > 0 {
-		b.Discounts = req.Discounts
-	}
-	if len(req.Taxes) > 0 {
-		b.Taxes = req.Taxes
-	}
 	if req.PaymentMethod != nil {
 		b.PaymentMethod = *req.PaymentMethod
 	}
 	if req.PaymentStatus != nil {
 		b.PaymentStatus = *req.PaymentStatus
 	}
+
+	if len(req.LineItemUpdates) > 0 {
+		orders, err := s.repo.QueryOrdersBySession(ctx, b.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		orderByID := make(map[string]*Order, len(orders))
+		for i := range orders {
+			orderByID[orders[i].ID] = &orders[i]
+		}
+		for _, upd := range req.LineItemUpdates {
+			order := orderByID[upd.OrderID]
+			if order == nil {
+				return nil, fmt.Errorf("order not found in bill session: %s", upd.OrderID)
+			}
+			found := false
+			for i := range order.Items {
+				if order.Items[i].ID != upd.LineItemID {
+					continue
+				}
+				found = true
+				if upd.Quantity != nil {
+					if *upd.Quantity <= 0 {
+						return nil, fmt.Errorf("quantity must be > 0 for line item %s", upd.LineItemID)
+					}
+					order.Items[i].Quantity = *upd.Quantity
+				}
+				if upd.UserOverrride != nil {
+					order.Items[i].UserOverrride = upd.UserOverrride
+				}
+				if upd.Removed != nil {
+					order.Items[i].Removed = *upd.Removed
+					if *upd.Removed {
+						order.Items[i].Status = LineItemStatusCancelled
+					}
+				}
+				break
+			}
+			if !found {
+				return nil, fmt.Errorf("line item not found in order: %s", upd.LineItemID)
+			}
+		}
+
+		var recomputedTotal int64
+		for i := range orders {
+			orders[i].TotalPrice = sumLineItems(orders[i].Items)
+			orders[i].UpdatedAt = clock.GetCurrentTimestamp()
+			recomputedTotal += orders[i].TotalPrice
+			if err := s.repo.PutOrder(ctx, &orders[i]); err != nil {
+				return nil, err
+			}
+		}
+		b.TotalAmountInPaise = recomputedTotal
+	}
+
 	if req.TotalAmountInPaise != nil {
 		b.TotalAmountInPaise = *req.TotalAmountInPaise
 	}
