@@ -1,0 +1,280 @@
+meta {
+  name: update bill
+  type: http
+  seq: 2
+}
+
+patch {
+  url: {{api_url}}/api/v1/billing/bills
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "bill_id": "bill_6b11733c-9f51-4c7d-8e61-012940141d68",
+    "line_item_updates": [
+      {
+        "order_id": "ord_6f61ec08-95a3-4af8-9590-8fa2d6a067b3",
+        "line_item_id": "line_8c7e9774-3144-4b3e-b8ae-d0bd661683f7",
+        "user_override": {
+          "quantity": 3,
+          "price": 10000
+        },
+        "removed": true
+      }
+    ]
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
+
+example {
+  name: success - qty change
+  
+  request: {
+    url: {{api_url}}/api/v1/billing/bills
+    method: PATCH
+    mode: json
+    body:json: {
+      {
+        "bill_id": "bill_6b11733c-9f51-4c7d-8e61-012940141d68",
+        "line_item_updates": [
+          {
+            "order_id": "ord_6f61ec08-95a3-4af8-9590-8fa2d6a067b3",
+            "line_item_id": "line_8c7e9774-3144-4b3e-b8ae-d0bd661683f7",
+            "user_override": {
+              "quantity": 3
+            }
+          }
+        ]
+      }
+    }
+  }
+  
+  response: {
+    headers: {
+      date: Mon, 20 Apr 2026 18:34:13 GMT
+      content-type: application/json
+      content-length: 369
+      connection: keep-alive
+      x-amzn-requestid: 145cc9be-0f72-4921-b443-a17d90b9025c
+      x-amzn-trace-id: Root=1-69e671a3-27dbc586737adca7566100e9;Sampled=1;Lineage=1:f3c3df5e:0
+    }
+  
+    status: {
+      code: 200
+      text: OK
+    }
+  
+    body: {
+      type: json
+      content: '''
+        {
+          "id": "bill_6b11733c-9f51-4c7d-8e61-012940141d68",
+          "session_id": "sess_b39e48cb-65fd-4b02-a834-22de49c62fd3",
+          "table_ids": [
+            "T5"
+          ],
+          "staff_id": "happy::9043da61-8fc6-4f8d-b9b2-b0574a5fb6fc",
+          "payment_method": "cash",
+          "payment_status": "pending",
+          "created_at": 1776697992641,
+          "updated_at": 1776710053615,
+          "total_tax_in_paise": 0,
+          "total_discount_in_paise": 0,
+          "total_amount_in_paise": 62000
+        }
+      '''
+    }
+  }
+}
+
+example {
+  name: success - only price change
+  
+  request: {
+    url: {{api_url}}/api/v1/billing/bills
+    method: PATCH
+    mode: json
+    body:json: {
+      {
+        "bill_id": "bill_6b11733c-9f51-4c7d-8e61-012940141d68",
+        "line_item_updates": [
+          {
+            "order_id": "ord_6f61ec08-95a3-4af8-9590-8fa2d6a067b3",
+            "line_item_id": "line_8c7e9774-3144-4b3e-b8ae-d0bd661683f7",
+            "user_override": {
+              "price": 10000
+            }
+          }
+        ]
+      }
+    }
+  }
+  
+  response: {
+    headers: {
+      date: Mon, 20 Apr 2026 18:45:47 GMT
+      content-type: application/json
+      content-length: 369
+      connection: keep-alive
+      x-amzn-requestid: 84505c71-d326-486a-a6e4-9e073761f1d4
+      x-amzn-trace-id: Root=1-69e6745a-0de8d3d97b887c8060fd0167;Sampled=1;Lineage=1:f3c3df5e:0
+    }
+  
+    status: {
+      code: 200
+      text: OK
+    }
+  
+    body: {
+      type: json
+      content: '''
+        {
+          "id": "bill_6b11733c-9f51-4c7d-8e61-012940141d68",
+          "session_id": "sess_b39e48cb-65fd-4b02-a834-22de49c62fd3",
+          "table_ids": [
+            "T5"
+          ],
+          "staff_id": "happy::9043da61-8fc6-4f8d-b9b2-b0574a5fb6fc",
+          "payment_method": "cash",
+          "payment_status": "pending",
+          "created_at": 1776697992641,
+          "updated_at": 1776710747980,
+          "total_tax_in_paise": 0,
+          "total_discount_in_paise": 0,
+          "total_amount_in_paise": 28000
+        }
+      '''
+    }
+  }
+}
+
+example {
+  name: success - both qty price
+  
+  request: {
+    url: {{api_url}}/api/v1/billing/bills
+    method: PATCH
+    mode: json
+    body:json: {
+      {
+        "bill_id": "bill_6b11733c-9f51-4c7d-8e61-012940141d68",
+        "line_item_updates": [
+          {
+            "order_id": "ord_6f61ec08-95a3-4af8-9590-8fa2d6a067b3",
+            "line_item_id": "line_8c7e9774-3144-4b3e-b8ae-d0bd661683f7",
+            "user_override": {
+              "quantity": 3,
+              "price": 10000
+            }
+          }
+        ]
+      }
+    }
+  }
+  
+  response: {
+    headers: {
+      date: Mon, 20 Apr 2026 18:46:56 GMT
+      content-type: application/json
+      content-length: 369
+      connection: keep-alive
+      x-amzn-requestid: 1b028e01-92f9-41da-ab01-11edfeb91e89
+      x-amzn-trace-id: Root=1-69e674a0-0e11d7677ff1d6692166414b;Sampled=1;Lineage=1:f3c3df5e:0
+    }
+  
+    status: {
+      code: 200
+      text: OK
+    }
+  
+    body: {
+      type: json
+      content: '''
+        {
+          "id": "bill_6b11733c-9f51-4c7d-8e61-012940141d68",
+          "session_id": "sess_b39e48cb-65fd-4b02-a834-22de49c62fd3",
+          "table_ids": [
+            "T5"
+          ],
+          "staff_id": "happy::9043da61-8fc6-4f8d-b9b2-b0574a5fb6fc",
+          "payment_method": "cash",
+          "payment_status": "pending",
+          "created_at": 1776697992641,
+          "updated_at": 1776710816825,
+          "total_tax_in_paise": 0,
+          "total_discount_in_paise": 0,
+          "total_amount_in_paise": 38000
+        }
+      '''
+    }
+  }
+}
+
+example {
+  name: success - removed
+  
+  request: {
+    url: {{api_url}}/api/v1/billing/bills
+    method: PATCH
+    mode: json
+    body:json: {
+      {
+        "bill_id": "bill_6b11733c-9f51-4c7d-8e61-012940141d68",
+        "line_item_updates": [
+          {
+            "order_id": "ord_6f61ec08-95a3-4af8-9590-8fa2d6a067b3",
+            "line_item_id": "line_8c7e9774-3144-4b3e-b8ae-d0bd661683f7",
+            "user_override": {
+              "quantity": 3,
+              "price": 10000
+            },
+            "removed": true
+          }
+        ]
+      }
+    }
+  }
+  
+  response: {
+    headers: {
+      date: Mon, 20 Apr 2026 18:47:37 GMT
+      content-type: application/json
+      content-length: 368
+      connection: keep-alive
+      x-amzn-requestid: 8666da02-9a76-4462-ba25-d60cdd089c3e
+      x-amzn-trace-id: Root=1-69e674c9-0da29aa016fc968f048893d5;Sampled=1;Lineage=1:f3c3df5e:0
+    }
+  
+    status: {
+      code: 200
+      text: OK
+    }
+  
+    body: {
+      type: json
+      content: '''
+        {
+          "id": "bill_6b11733c-9f51-4c7d-8e61-012940141d68",
+          "session_id": "sess_b39e48cb-65fd-4b02-a834-22de49c62fd3",
+          "table_ids": [
+            "T5"
+          ],
+          "staff_id": "happy::9043da61-8fc6-4f8d-b9b2-b0574a5fb6fc",
+          "payment_method": "cash",
+          "payment_status": "pending",
+          "created_at": 1776697992641,
+          "updated_at": 1776710857260,
+          "total_tax_in_paise": 0,
+          "total_discount_in_paise": 0,
+          "total_amount_in_paise": 8000
+        }
+      '''
+    }
+  }
+}

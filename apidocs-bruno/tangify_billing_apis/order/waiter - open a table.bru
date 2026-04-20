@@ -1,0 +1,123 @@
+meta {
+  name: waiter - open a table
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{api_url}}/api/v1/billing/sessions
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "table_ids": [
+      "T5"
+    ],
+    "items": [
+      {
+        "id": "",
+        "name": "Dal",
+        "quantity": 2,
+        "price": 18000,
+        "status": ""
+      }
+    ],
+    "channel": "dining_table",
+    "customer_id": null,
+    "staff_id": null,
+    "ordered_at": null
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
+
+example {
+  name: success
+  
+  request: {
+    url: {{api_url}}/api/v1/billing/sessions
+    method: POST
+    mode: json
+    body:json: {
+      {
+        "table_ids": [
+          "T5"
+        ],
+        "items": [
+          {
+            "id": "",
+            "name": "Dal",
+            "quantity": 2,
+            "price": 18000,
+            "status": ""
+          }
+        ],
+        "channel": "dining_table",
+        "customer_id": null,
+        "staff_id": null,
+        "ordered_at": null
+      }
+    }
+  }
+  
+  response: {
+    headers: {
+      date: Sat, 18 Apr 2026 19:23:36 GMT
+      content-type: application/json
+      content-length: 612
+      connection: keep-alive
+      x-amzn-requestid: afc38dc2-6020-4add-ae58-0bf7d5fea073
+      x-amzn-trace-id: Root=1-69e3da38-4e1ae55a26e2a3413d08e6b7;Sampled=1;Lineage=1:f3c3df5e:0
+    }
+  
+    status: {
+      code: 200
+      text: OK
+    }
+  
+    body: {
+      type: json
+      content: '''
+        {
+          "session": {
+            "id": "sess_5abb67c4-66cb-4a27-9c03-71fad56e55f1",
+            "table_ids": [
+              "T5"
+            ],
+            "status": "live",
+            "opened_at": 1776540216584,
+            "updated_at": 1776540216584,
+            "venue_id": "default"
+          },
+          "orders": [
+            {
+              "id": "ord_170c2b79-4562-4d30-8681-c71f4e01a858",
+              "session_id": "sess_5abb67c4-66cb-4a27-9c03-71fad56e55f1",
+              "venue_id": "default",
+              "channel": "dining_table",
+              "staff_id": "Admin::54756916-ffec-408b-a8b8-167793ba64d5",
+              "items": [
+                {
+                  "id": "line_acd7933a-2e14-4462-97dc-8421577ae5ce",
+                  "name": "Dal",
+                  "quantity": 2,
+                  "price": 18000,
+                  "status": "queued"
+                }
+              ],
+              "total_price": 36000,
+              "kitchen_status": "pending",
+              "ordered_at": 1776540216584,
+              "updated_at": 1776540216584
+            }
+          ]
+        }
+      '''
+    }
+  }
+}

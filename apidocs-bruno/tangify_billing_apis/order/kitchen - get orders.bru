@@ -1,0 +1,57 @@
+meta {
+  name: kitchen - get orders
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{api_url}}/api/v1/kitchen/item-board
+  body: none
+  auth: inherit
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
+
+example {
+  name: success
+  
+  request: {
+    url: {{api_url}}/api/v1/kitchen/item-board
+    method: GET
+    mode: none
+  }
+  
+  response: {
+    headers: {
+      date: Mon, 20 Apr 2026 18:58:35 GMT
+      content-type: application/json
+      content-length: 161
+      connection: keep-alive
+      x-amzn-requestid: 6b86a4c3-bf0b-416a-885f-0674693a515a
+      x-amzn-trace-id: Root=1-69e6775b-093a3ace2583a3ba0a7d8781;Sampled=1;Lineage=1:f3c3df5e:0
+    }
+  
+    status: {
+      code: 200
+      text: OK
+    }
+  
+    body: {
+      type: json
+      content: '''
+        [
+          {
+            "order_id": "ord_7a0344eb-96ec-480d-8e79-5b03cb0d24f3",
+            "line_item_id": "line_c3077760-ba6f-4173-ba39-5eec998e3e00",
+            "name": "Rice",
+            "quantity": 1,
+            "status": "queued"
+          }
+        ]
+      '''
+    }
+  }
+}
