@@ -22,7 +22,7 @@ settings {
 }
 
 example {
-  name: success
+  name: success - new bill created
   
   request: {
     url: {{api_url}}/api/v1/billing/bills/start
@@ -67,6 +67,46 @@ example {
           "total_tax_in_paise": 0,
           "total_discount_in_paise": 0,
           "total_amount_in_paise": 44000
+        }
+      '''
+    }
+  }
+}
+
+example {
+  name: non live session
+  
+  request: {
+    url: {{api_url}}/api/v1/billing/bills/start
+    method: POST
+    mode: json
+    body:json: {
+      {
+        "session_id": "sess_b39e48cb-65fd-4b02-a834-22de49c62fd3"
+      }
+    }
+  }
+  
+  response: {
+    headers: {
+      date: Mon, 20 Apr 2026 17:53:52 GMT
+      content-type: application/json
+      content-length: 46
+      connection: keep-alive
+      x-amzn-requestid: 28671ec6-36dd-4b5f-884e-2d77bd3ac592
+      x-amzn-trace-id: Root=1-69e6682e-16f65ca87e5a9d9f5e746029;Sampled=1;Lineage=1:f3c3df5e:0
+    }
+  
+    status: {
+      code: 400
+      text: Bad Request
+    }
+  
+    body: {
+      type: json
+      content: '''
+        {
+          "error": "session must be live to start bill"
         }
       '''
     }

@@ -48,11 +48,17 @@ func sumLineItems(items []LineItem) int64 {
 		if li.Removed {
 			continue
 		}
+		qty := li.Quantity
 		price := li.Price
-		if li.UserOverrride != nil {
-			price = *li.UserOverrride
+		if li.UserOverride != nil {
+			if li.UserOverride.Quantity != nil && *li.UserOverride.Quantity > 0 {
+				qty = *li.UserOverride.Quantity
+			}
+			if li.UserOverride.Price != nil {
+				price = *li.UserOverride.Price
+			}
 		}
-		t += price * int64(li.Quantity)
+		t += price * int64(qty)
 	}
 	return t
 }
@@ -353,15 +359,26 @@ func (s *Service) StartBill(ctx context.Context, req StartBillForSessionRequest,
 	if sess == nil {
 		return nil, fmt.Errorf("session not found")
 	}
-	if sess.Status != SessionStatusLive {
-		return nil, fmt.Errorf("session must be live to start bill")
-	}
 	if sess.BillID != "" {
 		b, err := s.repo.GetBill(ctx, sess.BillID)
 		if err != nil {
 			return nil, err
 		}
-		return b, nil
+		if b != nil {
+			return b, nil
+		}
+	}
+	// Idempotency fallback: if session already moved out of live and has a bill row,
+	// return the existing bill instead of trying to create a duplicate.
+	if sess.Status != SessionStatusLive {
+		bills, err := s.repo.QueryBillsBySession(ctx, sess.ID)
+		if err != nil {
+			return nil, err
+		}
+		if len(bills) > 0 {
+			return &bills[0], nil
+		}
+		return nil, fmt.Errorf("session is not live and no existing bill found")
 	}
 	now := clock.GetCurrentTimestamp()
 	pB := PrefixBill
@@ -429,11 +446,11 @@ func (s *Service) UpdateBill(ctx context.Context, req UpdateBillRequestV2, clock
 		b.PaymentStatus = *req.PaymentStatus
 	}
 
+	orders, err := s.repo.QueryOrdersBySession(ctx, b.SessionID)
+	if err != nil {
+		return nil, err
+	}
 	if len(req.LineItemUpdates) > 0 {
-		orders, err := s.repo.QueryOrdersBySession(ctx, b.SessionID)
-		if err != nil {
-			return nil, err
-		}
 		orderByID := make(map[string]*Order, len(orders))
 		for i := range orders {
 			orderByID[orders[i].ID] = &orders[i]
@@ -449,14 +466,11 @@ func (s *Service) UpdateBill(ctx context.Context, req UpdateBillRequestV2, clock
 					continue
 				}
 				found = true
-				if upd.Quantity != nil {
-					if *upd.Quantity <= 0 {
-						return nil, fmt.Errorf("quantity must be > 0 for line item %s", upd.LineItemID)
+				if upd.UserOverride != nil {
+					if upd.UserOverride.Quantity != nil && *upd.UserOverride.Quantity <= 0 {
+						return nil, fmt.Errorf("user_override.quantity must be > 0 for line item %s", upd.LineItemID)
 					}
-					order.Items[i].Quantity = *upd.Quantity
-				}
-				if upd.UserOverrride != nil {
-					order.Items[i].UserOverrride = upd.UserOverrride
+					order.Items[i].UserOverride = upd.UserOverride
 				}
 				if upd.Removed != nil {
 					order.Items[i].Removed = *upd.Removed
@@ -471,21 +485,19 @@ func (s *Service) UpdateBill(ctx context.Context, req UpdateBillRequestV2, clock
 			}
 		}
 
-		var recomputedTotal int64
 		for i := range orders {
 			orders[i].TotalPrice = sumLineItems(orders[i].Items)
 			orders[i].UpdatedAt = clock.GetCurrentTimestamp()
-			recomputedTotal += orders[i].TotalPrice
 			if err := s.repo.PutOrder(ctx, &orders[i]); err != nil {
 				return nil, err
 			}
 		}
-		b.TotalAmountInPaise = recomputedTotal
 	}
-
-	if req.TotalAmountInPaise != nil {
-		b.TotalAmountInPaise = *req.TotalAmountInPaise
+	var recomputedTotal int64
+	for i := range orders {
+		recomputedTotal += sumLineItems(orders[i].Items)
 	}
+	b.TotalAmountInPaise = recomputedTotal
 	b.UpdatedAt = clock.GetCurrentTimestamp()
 	if err := s.repo.PutBill(ctx, b); err != nil {
 		return nil, err

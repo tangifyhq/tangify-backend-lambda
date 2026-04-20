@@ -285,8 +285,9 @@ Open a table session and place the **first** order (tables become live).
 ```
 
 - `table_ids`: one table or multiple for **joined** tables.  
-- Line `id` / `status` may be omitted; server fills defaults (`line_*` ids, `queued`).  
+- Line `id` / `status` may be omitted; server fills defaults (`line_*` ids, `pending`).  
 - `price` is in **paise** (integer). Totals use `sum(price * quantity)` per order.
+- If any requested `table_id` already belongs to a `live`/`billing` session, API returns `409` and asks you to add orders to the existing session.
 
 **Response** `200` — `SessionWithOrders`:
 
@@ -306,7 +307,7 @@ Open a table session and place the **first** order (tables become live).
       "session_id": "sess_…",
       "venue_id": "default",
       "channel": "dining_table",
-      "items": [{ "id": "line_…", "name": "Dal", "quantity": 2, "price": 18000, "status": "queued" }],
+      "items": [{ "id": "line_…", "name": "Dal", "quantity": 2, "price": 18000, "user_override": null, "removed": false, "status": "pending" }],
       "total_price": 36000,
       "kitchen_status": "pending",
       "ordered_at": 1710000000000,
@@ -353,20 +354,32 @@ curl -sS -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application
 
 ### `PATCH /api/v1/billing/orders`
 
-Update line items and/or kitchen status on an order.
+Update line items and/or kitchen status on an order. Supports soft-removing line items from billing/order totals.
 
 **Request body** — `UpdateOrderRequestV2`:
 
 ```json
 {
   "order_id": "ord_…",
-  "items": [{ "id": "line_…", "name": "Dal", "quantity": 2, "price": 18000, "status": "queued" }],
+  "items": [
+    {
+      "id": "line_…",
+      "name": "Dal",
+      "quantity": 2,
+      "price": 18000,
+      "user_override": null,
+      "removed": false,
+      "status": "pending"
+    }
+  ],
+  "remove_line_item_ids": ["line_…"],
   "total_price": null,
   "kitchen_status": null
 }
 ```
 
 Omit `items` to leave lines unchanged; set `kitchen_status` to a **KitchenStatus** value if needed (`pending`, `preparing`, `ready`, `served`, `cancelled`).
+Use `remove_line_item_ids` to mark specific line items as `removed=true` and `status=cancelled` in that order.
 
 **Response** `200` — `Order`.
 
@@ -407,6 +420,7 @@ curl -sS -H "Authorization: Bearer $TOKEN" \
 ### `POST /api/v1/billing/bills/start`
 
 Create the bill and move session to **billing**; links orders to the bill and rolls up totals.
+This endpoint is idempotent for a session: if a bill already exists (including non-`live` session states), server returns the existing bill instead of creating a duplicate.
 
 **Request body** — `StartBillForSessionRequest`:
 
@@ -441,20 +455,35 @@ curl -sS -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application
 
 ### `PATCH /api/v1/billing/bills`
 
-Update discounts, taxes, payment fields, or total.
+Update payment fields, optional bill total override, and/or apply billing-time line-item edits across orders in the bill's session.
 
 **Request body** — `UpdateBillRequestV2`:
 
 ```json
 {
   "bill_id": "bill_…",
-  "discounts": [],
-  "taxes": [],
   "payment_method": "card",
   "payment_status": "pending",
-  "total_amount_in_paise": null
+  "line_item_updates": [
+    {
+      "order_id": "ord_…",
+      "line_item_id": "line_…",
+      "user_override": {
+        "quantity": 3,
+        "price": 17000
+      },
+      "removed": false
+    }
+  ]
 }
 ```
+
+`line_item_updates` behavior:
+- `user_override.quantity`: optional per-line quantity override (`> 0`)
+- `user_override.price`: optional per-line price override (paise)
+- `removed`: soft remove from billing totals (`true` also sets line status to `cancelled`)
+
+`total_amount_in_paise` is server-controlled and computed from current non-removed line items (applying any `user_override` values). Client cannot override it.
 
 **Response** `200` — `Bill`.
 
@@ -511,7 +540,7 @@ Expand all venue orders into per-line rows (excludes lines already `served` or `
     "line_item_id": "line_…",
     "name": "Dal",
     "quantity": 2,
-    "status": "queued"
+    "status": "pending"
   }
 ]
 ```
@@ -537,7 +566,7 @@ Update **one line item**’s kitchen status.
 }
 ```
 
-Line item statuses: `queued`, `preparing`, `ready`, `served`, `cancelled`.
+Line item statuses: `pending`, `preparing`, `ready`, `served`, `cancelled`.
 
 **Response** `200` — full `Order` after update.
 

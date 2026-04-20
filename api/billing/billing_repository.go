@@ -268,8 +268,17 @@ func encodeOrder(o *Order) (map[string]types.AttributeValue, error) {
 			"price":    &types.AttributeValueMemberN{Value: strconv.FormatInt(li.Price, 10)},
 			"status":   &types.AttributeValueMemberS{Value: li.Status},
 		}
-		if li.UserOverrride != nil {
-			im["user_overrride"] = &types.AttributeValueMemberN{Value: strconv.FormatInt(*li.UserOverrride, 10)}
+		if li.UserOverride != nil {
+			ov := map[string]types.AttributeValue{}
+			if li.UserOverride.Quantity != nil {
+				ov["quantity"] = &types.AttributeValueMemberN{Value: strconv.Itoa(*li.UserOverride.Quantity)}
+			}
+			if li.UserOverride.Price != nil {
+				ov["price"] = &types.AttributeValueMemberN{Value: strconv.FormatInt(*li.UserOverride.Price, 10)}
+			}
+			if len(ov) > 0 {
+				im["user_override"] = &types.AttributeValueMemberM{Value: ov}
+			}
 		}
 		if li.Removed {
 			im["removed"] = &types.AttributeValueMemberBOOL{Value: true}
@@ -359,9 +368,23 @@ func decodeOrder(item map[string]types.AttributeValue) (*Order, error) {
 			}
 			li.Quantity, _ = atoiAttr(m.Value, "quantity")
 			li.Price, _ = numAttr(m.Value, "price")
-			if n, ok := m.Value["user_overrride"].(*types.AttributeValueMemberN); ok {
-				if p, err := strconv.ParseInt(n.Value, 10, 64); err == nil {
-					li.UserOverrride = &p
+			if um, ok := m.Value["user_override"].(*types.AttributeValueMemberM); ok {
+				ov := &LineItemOverride{}
+				hasOverride := false
+				if q, ok := um.Value["quantity"].(*types.AttributeValueMemberN); ok {
+					if qty, err := strconv.Atoi(q.Value); err == nil {
+						ov.Quantity = &qty
+						hasOverride = true
+					}
+				}
+				if p, ok := um.Value["price"].(*types.AttributeValueMemberN); ok {
+					if price, err := strconv.ParseInt(p.Value, 10, 64); err == nil {
+						ov.Price = &price
+						hasOverride = true
+					}
+				}
+				if hasOverride {
+					li.UserOverride = ov
 				}
 			}
 			if b, ok := m.Value["removed"].(*types.AttributeValueMemberBOOL); ok {
