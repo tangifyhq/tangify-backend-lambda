@@ -1,0 +1,83 @@
+meta {
+  name: plating - update order status
+  type: http
+  seq: 10
+}
+
+patch {
+  url: {{api_url}}/api/v1/plating/orders/status
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "order_id": "ord_6f61ec08-95a3-4af8-9590-8fa2d6a067b3",
+    "kitchen_status": "ready"
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
+
+example {
+  name: success
+  
+  request: {
+    url: {{api_url}}/api/v1/plating/orders/status
+    method: PATCH
+    mode: json
+    body:json: {
+      {
+        "order_id": "ord_6f61ec08-95a3-4af8-9590-8fa2d6a067b3",
+        "kitchen_status": "ready"
+      }
+    }
+  }
+  
+  response: {
+    headers: {
+      date: Mon, 20 Apr 2026 19:50:43 GMT
+      content-type: application/json
+      content-length: 505
+      connection: keep-alive
+      x-amzn-requestid: 5974c2a8-4182-4edc-b6b5-5f04b9771c3d
+      x-amzn-trace-id: Root=1-69e68393-4b24b86e3f1037387a0c60d0;Sampled=1;Lineage=1:f3c3df5e:0
+    }
+  
+    status: {
+      code: 200
+      text: OK
+    }
+  
+    body: {
+      type: json
+      content: '''
+        {
+          "id": "ord_6f61ec08-95a3-4af8-9590-8fa2d6a067b3",
+          "session_id": "sess_b39e48cb-65fd-4b02-a834-22de49c62fd3",
+          "venue_id": "default",
+          "channel": "dining_table",
+          "bill_id": "bill_6b11733c-9f51-4c7d-8e61-012940141d68",
+          "staff_id": "Admin::54756916-ffec-408b-a8b8-167793ba64d5",
+          "items": [
+            {
+              "id": "line_8c7e9774-3144-4b3e-b8ae-d0bd661683f7",
+              "name": "Dal",
+              "quantity": 2,
+              "price": 18000,
+              "status": "ready"
+            }
+          ],
+          "total_price": 36000,
+          "kitchen_status": "ready",
+          "ordered_at": 1776540236868,
+          "ready_at": 1776714643536,
+          "updated_at": 1776714643536
+        }
+      '''
+    }
+  }
+}
