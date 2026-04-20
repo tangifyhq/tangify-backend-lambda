@@ -130,11 +130,12 @@ type KitchenDishCount struct {
 	Status    string `json:"status"` // LineItemStatus*
 }
 
-// PlatingQueueOrder is a minimal row for FIFO plating by table/session.
+// PlatingQueueOrder is a FIFO row for plating by table/session, including order items.
 type PlatingQueueOrder struct {
 	OrderID       string `json:"order_id"`
 	SessionID     string `json:"session_id"`
 	TableIDs      []string `json:"table_ids"`
+	Items         []LineItem `json:"items"`
 	KitchenStatus string `json:"kitchen_status"`
 	OrderedAt     int64  `json:"ordered_at"`
 }

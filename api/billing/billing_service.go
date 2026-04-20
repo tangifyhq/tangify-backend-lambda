@@ -642,6 +642,7 @@ func (s *Service) PlatingFIFO(ctx context.Context, venueID, tableID, sessionID s
 			OrderID:       o.ID,
 			SessionID:     o.SessionID,
 			TableIDs:      tids,
+			Items:         o.Items,
 			KitchenStatus: o.KitchenStatus,
 			OrderedAt:     o.OrderedAt,
 		})

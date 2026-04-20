@@ -248,7 +248,6 @@ Live or billing sessions with their orders (waiter board).
         "id": "sess_…",
         "table_ids": ["T1", "T2"],
         "status": "live",
-        "bill_id": "",
         "opened_at": 1710000000000,
         "venue_id": "default"
       },
@@ -307,7 +306,7 @@ Open a table session and place the **first** order (tables become live).
       "session_id": "sess_…",
       "venue_id": "default",
       "channel": "dining_table",
-      "items": [{ "id": "line_…", "name": "Dal", "quantity": 2, "price": 18000, "user_override": null, "removed": false, "status": "pending" }],
+      "items": [{ "id": "line_…", "name": "Dal", "quantity": 2, "price": 18000, "status": "pending" }],
       "total_price": 36000,
       "kitchen_status": "pending",
       "ordered_at": 1710000000000,
@@ -367,8 +366,6 @@ Update line items and/or kitchen status on an order. Supports soft-removing line
       "name": "Dal",
       "quantity": 2,
       "price": 18000,
-      "user_override": null,
-      "removed": false,
       "status": "pending"
     }
   ],
@@ -602,6 +599,15 @@ If `session_id` and `table_id` are omitted, returns all non-served orders for th
     "order_id": "ord_…",
     "session_id": "sess_…",
     "table_ids": ["T5"],
+    "items": [
+      {
+        "id": "line_…",
+        "name": "Dal",
+        "quantity": 2,
+        "price": 18000,
+        "status": "pending"
+      }
+    ],
     "kitchen_status": "pending",
     "ordered_at": 1710000000000
   }
