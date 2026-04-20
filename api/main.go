@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -232,6 +233,10 @@ func handler(ctx context.Context, request events.LambdaFunctionURLRequest) (even
 		}
 		data, err := billingService.CreateSessionAndFirstOrder(ctx, body, staffID, commonUtils)
 		if err != nil {
+			var open *billing.TableOpenError
+			if errors.As(err, &open) {
+				return ApiResponse.Error(http.StatusConflict, err.Error()), nil
+			}
 			return ApiResponse.Error(http.StatusBadRequest, err.Error()), nil
 		}
 		return ApiResponse.Success(data), nil

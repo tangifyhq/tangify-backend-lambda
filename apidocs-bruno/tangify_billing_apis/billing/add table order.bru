@@ -1,0 +1,128 @@
+meta {
+  name: add table order
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{api_url}}/api/v1/billing/orders
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "session_id": "invalid-session",
+    "items": [{ "name": "Rice", "quantity": 1, "price": 8000 }],
+    "channel": "dining_table",
+    "staff_id": null
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
+
+example {
+  name: success
+  
+  request: {
+    url: {{api_url}}/api/v1/billing/orders
+    method: POST
+    mode: json
+    body:json: {
+      {
+        "session_id": "sess_b39e48cb-65fd-4b02-a834-22de49c62fd3",
+        "items": [{ "name": "Rice", "quantity": 1, "price": 8000 }],
+        "channel": "dining_table",
+        "staff_id": null
+      }
+    }
+  }
+  
+  response: {
+    headers: {
+      date: Mon, 20 Apr 2026 14:43:39 GMT
+      content-type: application/json
+      content-length: 428
+      connection: keep-alive
+      x-amzn-requestid: 48ba8500-54e2-4aab-bf8f-e98145270694
+      x-amzn-trace-id: Root=1-69e63b9b-343ed3482be76c6d5ebeecd6;Sampled=1;Lineage=1:f3c3df5e:0
+    }
+  
+    status: {
+      code: 200
+      text: OK
+    }
+  
+    body: {
+      type: json
+      content: '''
+        {
+          "id": "ord_7a0344eb-96ec-480d-8e79-5b03cb0d24f3",
+          "session_id": "sess_b39e48cb-65fd-4b02-a834-22de49c62fd3",
+          "venue_id": "default",
+          "channel": "dining_table",
+          "staff_id": "happy::9043da61-8fc6-4f8d-b9b2-b0574a5fb6fc",
+          "items": [
+            {
+              "id": "line_c3077760-ba6f-4173-ba39-5eec998e3e00",
+              "name": "Rice",
+              "quantity": 1,
+              "price": 8000,
+              "status": "queued"
+            }
+          ],
+          "total_price": 8000,
+          "kitchen_status": "pending",
+          "ordered_at": 1776696219863,
+          "updated_at": 1776696219863
+        }
+      '''
+    }
+  }
+}
+
+example {
+  name: session not found
+  
+  request: {
+    url: {{api_url}}/api/v1/billing/orders
+    method: POST
+    mode: json
+    body:json: {
+      {
+        "session_id": "invalid-session",
+        "items": [{ "name": "Rice", "quantity": 1, "price": 8000 }],
+        "channel": "dining_table",
+        "staff_id": null
+      }
+    }
+  }
+  
+  response: {
+    headers: {
+      date: Mon, 20 Apr 2026 14:44:11 GMT
+      content-type: application/json
+      content-length: 29
+      connection: keep-alive
+      x-amzn-requestid: 485badcf-e0b3-46aa-82ae-8a67513a1541
+      x-amzn-trace-id: Root=1-69e63bbb-6e725c507d1e6349478e0983;Sampled=1;Lineage=1:f3c3df5e:0
+    }
+  
+    status: {
+      code: 400
+      text: Bad Request
+    }
+  
+    body: {
+      type: json
+      content: '''
+        {
+          "error": "session not found"
+        }
+      '''
+    }
+  }
+}

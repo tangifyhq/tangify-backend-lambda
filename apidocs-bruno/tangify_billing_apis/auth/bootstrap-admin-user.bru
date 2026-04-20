@@ -1,0 +1,129 @@
+meta {
+  name: bootstrap admin user
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{api_url}}/api/v1/users/bootstrap
+  body: json
+  auth: none
+}
+
+headers {
+  X-Bootstrap-Secret: {{bootstrap_secret}}
+}
+
+body:json {
+  {
+    "phone": "+919439831236",
+    "email": "",
+    "name": "abhisek",
+    "role": "admin",
+    "password": "long-secure-password"
+  }
+}
+
+vars:pre-request {
+  bootstrap_secret: notARealB
+}
+
+example {
+  name: error
+  
+  request: {
+    url: {{api_url}}/api/v1/users/bootstrap
+    method: POST
+    mode: json
+    headers: {
+      X-Bootstrap-Secret: {{bootstrap_secret}}
+    }
+  
+    body:json: {
+      {
+        "phone": "+919439831236",
+        "email": "",
+        "name": "abhisek",
+        "role": "admin",
+        "password": "long-secure-password"
+      }
+    }
+  }
+  
+  response: {
+    headers: {
+      date: Sat, 18 Apr 2026 18:17:02 GMT
+      content-type: application/json
+      content-length: 36
+      connection: keep-alive
+      x-amzn-requestid: e622ed1f-68c6-4767-a1e2-ad093d5778dd
+      x-amzn-trace-id: Root=1-69e3ca9e-14a5fbf76c13c03f338c8f96;Sampled=1;Lineage=1:f3c3df5e:0
+    }
+  
+    status: {
+      code: 400
+      text: Bad Request
+    }
+  
+    body: {
+      type: json
+      content: '''
+        {
+          "error": "phone already registered"
+        }
+      '''
+    }
+  }
+}
+
+example {
+  name: success
+  
+  request: {
+    url: {{api_url}}/api/v1/users/bootstrap
+    method: POST
+    mode: json
+    headers: {
+      X-Bootstrap-Secret: {{bootstrap_secret}}
+    }
+  
+    body:json: {
+      {
+        "phone": "+919439831236",
+        "email": "",
+        "name": "abhisek",
+        "role": "admin",
+        "password": "long-secure-password"
+      }
+    }
+  }
+  
+  response: {
+    headers: {
+      date: Sat, 18 Apr 2026 19:08:20 GMT
+      content-type: application/json
+      content-length: 112
+      connection: keep-alive
+      x-amzn-requestid: ff139d35-f4cc-4f7d-866d-69570b3aa714
+      x-amzn-trace-id: Root=1-69e3d6a1-77ed8e944e61b43436ba2649;Sampled=1;Lineage=1:f3c3df5e:0
+    }
+  
+    status: {
+      code: 200
+      text: OK
+    }
+  
+    body: {
+      type: json
+      content: '''
+        {
+          "id": "a83530dd-1fdc-4d23-b550-40a5d9bb3c58",
+          "phone": "+919439831236",
+          "email": "",
+          "name": "abhisek",
+          "role": "admin"
+        }
+      '''
+    }
+  }
+}

@@ -16,6 +16,7 @@ type User struct {
 	Email     string `json:"email"`
 	Name      string `json:"name"`
 	Role      string `json:"role"`
+	PwSalt    string `json:"-"` // random per user; bcrypt input is derived from password + salt
 	PwHash    string `json:"-"`
 	CreatedAt int64  `json:"created_at"`
 	UpdatedAt int64  `json:"updated_at"`

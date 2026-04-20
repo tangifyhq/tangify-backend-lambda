@@ -1,0 +1,55 @@
+meta {
+  name: me
+  type: http
+  seq: 10
+}
+
+get {
+  url: {{api_url}}/api/v1/users/me
+  body: none
+  auth: inherit
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
+
+example {
+  name: success
+  
+  request: {
+    url: {{api_url}}/api/v1/users/me
+    method: GET
+    mode: none
+  }
+  
+  response: {
+    headers: {
+      date: Sat, 18 Apr 2026 19:13:42 GMT
+      content-type: application/json
+      content-length: 110
+      connection: keep-alive
+      x-amzn-requestid: 6c9708cf-ff75-4771-b5b1-aadb36c34a51
+      x-amzn-trace-id: Root=1-69e3d7e6-1117567547ca0ed349038e99;Sampled=1;Lineage=1:f3c3df5e:0
+    }
+  
+    status: {
+      code: 200
+      text: OK
+    }
+  
+    body: {
+      type: json
+      content: '''
+        {
+          "id": "54756916-ffec-408b-a8b8-167793ba64d5",
+          "phone": "+919999999999",
+          "email": "",
+          "name": "Admin",
+          "role": "admin"
+        }
+      '''
+    }
+  }
+}

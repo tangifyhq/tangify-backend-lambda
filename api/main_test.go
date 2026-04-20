@@ -1,7 +1,8 @@
 package main
 
 import (
-	"contex	"testing"
+	"context"
+	"testing"
 
 	"github.com/aws/aws-lambda-go/events"
 )

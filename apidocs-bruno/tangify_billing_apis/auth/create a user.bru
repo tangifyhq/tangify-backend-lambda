@@ -1,0 +1,122 @@
+meta {
+  name: create a user
+  type: http
+  seq: 10
+}
+
+post {
+  url: {{api_url}}/api/v1/users
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZGVudGl0eSI6IjU0NzU2OTE2LWZmZWMtNDA4Yi1hOGI4LTE2Nzc5M2JhNjRkNSIsIm5hbWUiOiJBZG1pbiIsInJvbGUiOiJhZG1pbiIsInN1YiI6IjU0NzU2OTE2LWZmZWMtNDA4Yi1hOGI4LTE2Nzc5M2JhNjRkNSIsImV4cCI6MTc3NjYyMjU2OCwiaWF0IjoxNzc2NTM2MTY4fQ.-2qi2G38wVsmTjVp7ml9ObNxH_fonuWHokDuBa9iMfM
+}
+
+body:json {
+  {
+    "phone": "+919876543210",
+    "email": "",
+    "name": "happy",
+    "role": "waiter",
+    "password": "password"
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
+
+example {
+  name: success
+  
+  request: {
+    url: {{api_url}}/api/v1/users
+    method: POST
+    mode: json
+    body:json: {
+      {
+        "phone": "+919876543210",
+        "email": "",
+        "name": "happy",
+        "role": "waiter",
+        "password": "password"
+      }
+    }
+  }
+  
+  response: {
+    headers: {
+      date: Sat, 18 Apr 2026 19:11:46 GMT
+      content-type: application/json
+      content-length: 111
+      connection: keep-alive
+      x-amzn-requestid: 9c9df89c-f90d-49d8-98c2-df1e71124fbf
+      x-amzn-trace-id: Root=1-69e3d770-779ee8e315e1bc016bc842d6;Sampled=1;Lineage=1:f3c3df5e:0
+    }
+  
+    status: {
+      code: 200
+      text: OK
+    }
+  
+    body: {
+      type: json
+      content: '''
+        {
+          "id": "9043da61-8fc6-4f8d-b9b2-b0574a5fb6fc",
+          "phone": "+919876543210",
+          "email": "",
+          "name": "happy",
+          "role": "waiter"
+        }
+      '''
+    }
+  }
+}
+
+example {
+  name: error
+  
+  request: {
+    url: {{api_url}}/api/v1/users
+    method: POST
+    mode: json
+    body:json: {
+      {
+        "phone": "+919876543210",
+        "email": "",
+        "name": "happy",
+        "role": "waiter",
+        "password": "password"
+      }
+    }
+  }
+  
+  response: {
+    headers: {
+      date: Sat, 18 Apr 2026 19:12:04 GMT
+      content-type: application/json
+      content-length: 36
+      connection: keep-alive
+      x-amzn-requestid: 47b547bc-0bfa-4c7a-a076-25ed7515060a
+      x-amzn-trace-id: Root=1-69e3d784-78cd62133d4a7d80123d8c99;Sampled=1;Lineage=1:f3c3df5e:0
+    }
+  
+    status: {
+      code: 400
+      text: Bad Request
+    }
+  
+    body: {
+      type: json
+      content: '''
+        {
+          "error": "phone already registered"
+        }
+      '''
+    }
+  }
+}

@@ -55,21 +55,32 @@ curl -sS "https://EXAMPLE.lambda-url.on.aws/api/v1/menu"
 
 ## Users & auth
 
-Stored in DynamoDB table `tangify_users` (see `dynamodb/users/tangify_users.json`). Passwords are **bcrypt** hashes; API never returns `pw_hash`.
+Accounts live in DynamoDB table `tangify_users`. Create it (with billing tables) via `./create-dynamodb-tables.sh` from the repo root, or use the JSON in `dynamodb/users/tangify_users.json`. Each user has a random **`pw_salt`**; the server bcrypt-hashes a value derived from **password + salt** (see code for the exact derivation and the bcrypt 72-byte limit). Responses never include `pw_hash` or `pw_salt`.
 
 **Roles:** `waiter`, `kitchen`, `admin`.
 
-JWT claims include `identity` (user id), `name`, `role`, and standard `exp` / `iat` (24h TTL).
+**JWT:** HS256, **24h** TTL. Custom claims: `identity` (user id), `name`, `role`; registered claims include `sub` (same as user id), `exp`, `iat`. Send on protected routes as `Authorization: Bearer <token>`.
+
+| Method | Path | Auth |
+|--------|------|------|
+| `POST` | `/api/v1/auth/login` | Public |
+| `POST` | `/api/v1/users/bootstrap` | Header `X-Bootstrap-Secret` (no JWT) |
+| `GET` | `/api/v1/users/me` | JWT |
+| `POST` | `/api/v1/users` | JWT **admin** |
+| `PATCH` | `/api/v1/users/password` | JWT |
+
+Invalid JSON bodies return **`400`** with `Invalid JSON body` where applicable.
 
 ### `POST /api/v1/auth/login`
 
-**Request body** — `LoginResponse` input:
+**Request body** — `LoginRequest`:
 
 ```json
 { "login": "user@example.com", "password": "secret" }
 ```
 
-`login` may be **email** (contains `@`) or **phone** (normalized: spaces stripped).
+- If `login` contains `@`, it is treated as **email** (trimmed, lowercased for lookup).
+- Otherwise it is treated as **phone**; spaces are removed (`NormalizePhone`).
 
 **Response** `200` — `LoginResponse`:
 
@@ -86,7 +97,7 @@ JWT claims include `identity` (user id), `name`, `role`, and standard `exp` / `i
 }
 ```
 
-**Errors:** `401` invalid credentials.
+**Errors:** `401` — wrong credentials or missing `login` / `password` (`login and password required`, `invalid credentials`, etc.).
 
 ```bash
 curl -sS -X POST -H "Content-Type: application/json" \
@@ -98,8 +109,9 @@ curl -sS -X POST -H "Content-Type: application/json" \
 
 ### `POST /api/v1/users/bootstrap`
 
-Creates the first user (typically **admin**) when `TANGIFY_BOOTSTRAP_SECRET` is set in the environment. **Does not require JWT.**  
-Header: `X-Bootstrap-Secret: <same as env>`.
+Provisions a user when **`TANGIFY_BOOTSTRAP_SECRET`** is set in the Lambda environment. **No JWT.** Header **`X-Bootstrap-Secret`** must match the env value exactly.
+
+If `role` is omitted, it defaults to **`admin`**. Same validation as create user: **either phone or email is required** (you can send both), along with **name** and **password**; **password** at least **8** characters; **role** must be one of `waiter`, `kitchen`, `admin`; provided email/phone values must be unique.
 
 **Request body** — `BootstrapUserRequest`:
 
@@ -115,6 +127,8 @@ Header: `X-Bootstrap-Secret: <same as env>`.
 
 **Response** `200` — `UserPublic` (same shape as `user` in login).
 
+**Errors:** `403` — `Bootstrap is not configured` (env secret empty). `401` — wrong or missing `X-Bootstrap-Secret`. `400` — validation (duplicate email/phone, invalid role, short password, missing fields, etc.).
+
 ```bash
 curl -sS -X POST -H "Content-Type: application/json" \
   -H "X-Bootstrap-Secret: $TANGIFY_BOOTSTRAP_SECRET" \
@@ -126,9 +140,9 @@ curl -sS -X POST -H "Content-Type: application/json" \
 
 ### `POST /api/v1/users`
 
-**Admin only.** Creates a user with a known password.
+**Admin only** (`role` in JWT must be `admin`). Creates a user with the given password.
 
-**Request body** — `CreateUserRequest`:
+**Request body** — `CreateUserRequest` (same fields as bootstrap; **`role`** required here — no default):
 
 ```json
 {
@@ -140,7 +154,11 @@ curl -sS -X POST -H "Content-Type: application/json" \
 }
 ```
 
+**Password** minimum length **8**. At least one of `phone` or `email` is required (both are allowed). Any provided email/phone must be unique.
+
 **Response** `200` — `UserPublic`.
+
+**Errors:** `403` — `admin only`. `400` — validation (same messages as bootstrap/create path).
 
 ```bash
 curl -sS -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
@@ -152,9 +170,11 @@ curl -sS -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application
 
 ### `GET /api/v1/users/me`
 
-Returns the authenticated user (from JWT `identity`).
+Returns the user for JWT claim **`identity`**.
 
 **Response** `200` — `UserPublic` (same as login `user`).
+
+**Errors:** `404` — `user not found` (id in token missing from DB). `500` — DynamoDB / server error.
 
 ```bash
 curl -sS -H "Authorization: Bearer $TOKEN" \
@@ -165,10 +185,10 @@ curl -sS -H "Authorization: Bearer $TOKEN" \
 
 ### `PATCH /api/v1/users/password`
 
-**Rules:**
+**Who may change whom**
 
-- **Self:** must send `current_password` and `new_password`; `user_id` must be your own id.
-- **Admin** changing **another** user: send `user_id` and `new_password` only; `current_password` is not required.
+- **`admin`:** may set a new password for **any** user. Send `user_id` and `new_password` only; **`current_password` is not used**.
+- **Non-admin:** may change **only their own** password. Send `user_id` equal to your id, plus **`current_password`** and **`new_password`**.
 
 **Request body** — `ChangePasswordRequest`:
 
@@ -180,7 +200,11 @@ curl -sS -H "Authorization: Bearer $TOKEN" \
 }
 ```
 
-**Response** `200`: `{ "status": "ok" }`.
+`new_password` must be at least **8** characters. `user_id` is always required.
+
+**Response** `200` — `{ "status": "ok" }`.
+
+**Errors:** `403` — non-admin trying to change someone else’s password (`forbidden`). `400` — missing `user_id` / `new_password`, user not found, short password, or wrong `current_password` when required (`current password required or invalid`).
 
 ```bash
 curl -sS -X PATCH -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
@@ -581,9 +605,9 @@ curl -sS -X PATCH -H "Authorization: Bearer $TOKEN" -H "Content-Type: applicatio
 
 ---
 
-## Auth note
+## JWT for billing, kitchen, and plating
 
-`POST /api/v1/auth/login` is listed as a **whitelisted** path (no JWT). Implement login in this service or another function; until then, requests to that path may fall through to the default handler. Obtain a JWT from your actual auth flow and pass it as `Authorization: Bearer …` for billing, kitchen, and plating routes.
+Call **`POST /api/v1/auth/login`** (or use a token from an admin-created user), then pass **`Authorization: Bearer <jwt>`** on routes that are not public. See **Users & auth** above.
 
 ---
 

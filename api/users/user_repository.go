@@ -107,15 +107,23 @@ func NormalizePhone(s string) string {
 }
 
 func encodeUser(u *User) (map[string]types.AttributeValue, error) {
+	phone := NormalizePhone(u.Phone)
+	email := strings.ToLower(strings.TrimSpace(u.Email))
 	m := map[string]types.AttributeValue{
 		"id":         &types.AttributeValueMemberS{Value: u.ID},
-		"phone":      &types.AttributeValueMemberS{Value: NormalizePhone(u.Phone)},
-		"email":      &types.AttributeValueMemberS{Value: strings.ToLower(strings.TrimSpace(u.Email))},
 		"name":       &types.AttributeValueMemberS{Value: u.Name},
 		"role":       &types.AttributeValueMemberS{Value: u.Role},
+		"pw_salt":    &types.AttributeValueMemberS{Value: u.PwSalt},
 		"pw_hash":    &types.AttributeValueMemberS{Value: u.PwHash},
 		"created_at": &types.AttributeValueMemberN{Value: strconv.FormatInt(u.CreatedAt, 10)},
 		"updated_at": &types.AttributeValueMemberN{Value: strconv.FormatInt(u.UpdatedAt, 10)},
+	}
+	// GSI_Email / GSI_Phone keys cannot be empty strings; omit the attribute when unused.
+	if phone != "" {
+		m["phone"] = &types.AttributeValueMemberS{Value: phone}
+	}
+	if email != "" {
+		m["email"] = &types.AttributeValueMemberS{Value: email}
 	}
 	return m, nil
 }
@@ -136,6 +144,9 @@ func decodeUser(item map[string]types.AttributeValue) (*User, error) {
 	}
 	if v, ok := item["role"].(*types.AttributeValueMemberS); ok {
 		u.Role = v.Value
+	}
+	if v, ok := item["pw_salt"].(*types.AttributeValueMemberS); ok {
+		u.PwSalt = v.Value
 	}
 	if v, ok := item["pw_hash"].(*types.AttributeValueMemberS); ok {
 		u.PwHash = v.Value

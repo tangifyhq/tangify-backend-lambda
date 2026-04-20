@@ -2,6 +2,9 @@ package users
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"strings"
 
@@ -27,24 +30,51 @@ func validRole(r string) bool {
 	}
 }
 
-func hashPassword(pw string) (string, error) {
-	b, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
+const pwSaltBytes = 16
+
+// newPwSalt returns a URL-safe base64 (no padding) random salt stored per user.
+func newPwSalt() (string, error) {
+	b := make([]byte, pwSaltBytes)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// bcryptInput is the bytes bcrypt hashes. We use password+salt; if longer than bcrypt's
+// 72-byte limit, we SHA256 the concatenation first so long passwords still work.
+func bcryptInput(password, salt string) []byte {
+	if salt == "" {
+		return []byte(password)
+	}
+	combined := password + salt
+	if len(combined) <= 72 {
+		return []byte(combined)
+	}
+	sum := sha256.Sum256([]byte(combined))
+	return sum[:]
+}
+
+func hashPassword(password, salt string) (string, error) {
+	b, err := bcrypt.GenerateFromPassword(bcryptInput(password, salt), bcrypt.DefaultCost)
 	if err != nil {
 		return "", err
 	}
 	return string(b), nil
 }
 
-func checkPassword(hash, pw string) bool {
-	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(pw)) == nil
+// checkPassword verifies password against stored hash. Empty salt uses legacy bcrypt(password) only.
+func checkPassword(hash, salt, password string) bool {
+	err := bcrypt.CompareHashAndPassword([]byte(hash), bcryptInput(password, salt))
+	return err == nil
 }
 
 // CreateUser stores a new user. Caller must enforce admin authorization.
 func (s *Service) CreateUser(ctx context.Context, req CreateUserRequest, now int64) (*UserPublic, error) {
 	req.Phone = NormalizePhone(req.Phone)
 	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
-	if req.Phone == "" || req.Email == "" {
-		return nil, fmt.Errorf("phone and email are required")
+	if req.Phone == "" && req.Email == "" {
+		return nil, fmt.Errorf("either phone or email is required")
 	}
 	if req.Name == "" || req.Password == "" {
 		return nil, fmt.Errorf("name and password are required")
@@ -55,13 +85,21 @@ func (s *Service) CreateUser(ctx context.Context, req CreateUserRequest, now int
 	if len(req.Password) < 8 {
 		return nil, fmt.Errorf("password must be at least 8 characters")
 	}
-	if u, _ := s.repo.GetUserByEmail(ctx, req.Email); u != nil {
-		return nil, fmt.Errorf("email already registered")
+	if req.Email != "" {
+		if u, _ := s.repo.GetUserByEmail(ctx, req.Email); u != nil {
+			return nil, fmt.Errorf("email already registered")
+		}
 	}
-	if u, _ := s.repo.GetUserByPhone(ctx, req.Phone); u != nil {
-		return nil, fmt.Errorf("phone already registered")
+	if req.Phone != "" {
+		if u, _ := s.repo.GetUserByPhone(ctx, req.Phone); u != nil {
+			return nil, fmt.Errorf("phone already registered")
+		}
 	}
-	h, err := hashPassword(req.Password)
+	salt, err := newPwSalt()
+	if err != nil {
+		return nil, err
+	}
+	h, err := hashPassword(req.Password, salt)
 	if err != nil {
 		return nil, err
 	}
@@ -71,6 +109,7 @@ func (s *Service) CreateUser(ctx context.Context, req CreateUserRequest, now int
 		Email:     req.Email,
 		Name:      strings.TrimSpace(req.Name),
 		Role:      req.Role,
+		PwSalt:    salt,
 		PwHash:    h,
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -109,7 +148,7 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*LoginResponse, 
 	if err != nil {
 		return nil, err
 	}
-	if u == nil || !checkPassword(u.PwHash, req.Password) {
+	if u == nil || !checkPassword(u.PwHash, u.PwSalt, req.Password) {
 		return nil, fmt.Errorf("invalid credentials")
 	}
 	token, err := s.issueToken(u.ID, u.Name, u.Role)
@@ -141,14 +180,19 @@ func (s *Service) ChangePassword(ctx context.Context, actorID, actorRole string,
 		return fmt.Errorf("forbidden")
 	}
 	if isSelf && !isAdmin {
-		if req.CurrentPassword == "" || !checkPassword(u.PwHash, req.CurrentPassword) {
+		if req.CurrentPassword == "" || !checkPassword(u.PwHash, u.PwSalt, req.CurrentPassword) {
 			return fmt.Errorf("current password required or invalid")
 		}
 	}
-	h, err := hashPassword(req.NewPassword)
+	salt, err := newPwSalt()
 	if err != nil {
 		return err
 	}
+	h, err := hashPassword(req.NewPassword, salt)
+	if err != nil {
+		return err
+	}
+	u.PwSalt = salt
 	u.PwHash = h
 	u.UpdatedAt = now
 	return s.repo.PutUser(ctx, u)

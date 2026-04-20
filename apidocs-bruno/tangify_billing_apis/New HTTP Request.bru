@@ -1,0 +1,46 @@
+meta {
+  name: health
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{api_url}}/api/v1/health
+  body: none
+  auth: none
+}
+
+example {
+  name: example
+  
+  request: {
+    url: {{api_url}}/api/v1/health
+    method: GET
+    mode: none
+  }
+  
+  response: {
+    headers: {
+      date: Sat, 18 Apr 2026 18:55:48 GMT
+      content-type: application/json
+      content-length: 15
+      connection: keep-alive
+      x-amzn-requestid: d9cf6281-32d1-40b7-a513-a09ce865ed0f
+      x-amzn-trace-id: Root=1-69e3d3b4-1a649a964f0b8d54497b4aa0;Sampled=1;Lineage=1:f3c3df5e:0
+    }
+  
+    status: {
+      code: 200
+      text: OK
+    }
+  
+    body: {
+      type: json
+      content: '''
+        {
+          "status": "ok"
+        }
+      '''
+    }
+  }
+}

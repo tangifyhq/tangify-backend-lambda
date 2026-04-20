@@ -36,7 +36,7 @@ type TableSession struct {
 // --- Kitchen: per line item (kitchen view: counts by dish × order) ---
 
 const (
-	LineItemStatusQueued     = "queued"
+	LineItemStatusPending    = "pending"
 	LineItemStatusPreparing  = "preparing"
 	LineItemStatusReady      = "ready"
 	LineItemStatusServed     = "served"

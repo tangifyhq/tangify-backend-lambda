@@ -20,6 +20,16 @@ type Service struct {
 	repo *Repository
 }
 
+// TableOpenError is returned when creating a session for a table that already has a live or billing session.
+type TableOpenError struct {
+	TableID   string
+	SessionID string
+}
+
+func (e *TableOpenError) Error() string {
+	return fmt.Sprintf("table %s already has an open session; add orders to session %s", e.TableID, e.SessionID)
+}
+
 func NewService(repo *Repository) *Service {
 	return &Service{repo: repo}
 }
@@ -48,10 +58,16 @@ func ensureLineItemIDs(items []LineItem) []LineItem {
 			out[i].ID = PrefixLine + "_" + uuid.NewString()
 		}
 		if out[i].Status == "" {
-			out[i].Status = LineItemStatusQueued
+			out[i].Status = LineItemStatusPending
 		}
 	}
 	return out
+}
+
+func applyKitchenStatusToAllLineItems(items []LineItem, kitchenStatus string) {
+	for i := range items {
+		items[i].Status = kitchenStatus
+	}
 }
 
 func tableInSession(tableIDs []string, tableID string) bool {
@@ -78,6 +94,37 @@ func (s *Service) findLiveSessionForTable(ctx context.Context, venueID, tableID 
 		}
 	}
 	return nil, nil
+}
+
+// findOpenSessionForAnyTable returns an existing live/billing session if any requested table is already part of one.
+func (s *Service) findOpenSessionForAnyTable(ctx context.Context, venueID string, tableIDs []string) (*TableSession, string, error) {
+	sessions, err := s.repo.QuerySessionsByVenue(ctx, venueID, 500)
+	if err != nil {
+		return nil, "", err
+	}
+	want := make(map[string]struct{})
+	for _, t := range tableIDs {
+		t = strings.TrimSpace(t)
+		if t != "" {
+			want[t] = struct{}{}
+		}
+	}
+	if len(want) == 0 {
+		return nil, "", nil
+	}
+	for i := range sessions {
+		sess := &sessions[i]
+		if sess.Status != SessionStatusLive && sess.Status != SessionStatusBilling {
+			continue
+		}
+		for _, tid := range sess.TableIDs {
+			tid = strings.TrimSpace(tid)
+			if _, ok := want[tid]; ok {
+				return sess, tid, nil
+			}
+		}
+	}
+	return nil, "", nil
 }
 
 // --- Waiter ---
@@ -116,6 +163,11 @@ func (s *Service) CreateSessionAndFirstOrder(ctx context.Context, req CreateSess
 		return nil, fmt.Errorf("items required")
 	}
 	venueID := defaultVenueID()
+	if existing, tableID, err := s.findOpenSessionForAnyTable(ctx, venueID, req.TableIDs); err != nil {
+		return nil, err
+	} else if existing != nil {
+		return nil, &TableOpenError{TableID: tableID, SessionID: existing.ID}
+	}
 	now := clock.GetCurrentTimestamp()
 	pSess := PrefixSession
 	sid := clock.GenerateUniqueID(&pSess)
@@ -241,6 +293,7 @@ func (s *Service) UpdateOrderWithClock(ctx context.Context, req UpdateOrderReque
 	}
 	if req.KitchenStatus != nil {
 		o.KitchenStatus = *req.KitchenStatus
+		applyKitchenStatusToAllLineItems(o.Items, *req.KitchenStatus)
 	}
 	if req.TotalPrice != nil {
 		o.TotalPrice = *req.TotalPrice
@@ -518,6 +571,7 @@ func (s *Service) PatchOrderKitchenStatus(ctx context.Context, req PatchOrderKit
 		return nil, fmt.Errorf("order not found")
 	}
 	o.KitchenStatus = req.KitchenStatus
+	applyKitchenStatusToAllLineItems(o.Items, req.KitchenStatus)
 	now := clock.GetCurrentTimestamp()
 	o.UpdatedAt = now
 	if req.KitchenStatus == KitchenStatusReady {
