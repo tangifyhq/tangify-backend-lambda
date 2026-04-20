@@ -455,7 +455,7 @@ curl -sS -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application
 
 ### `PATCH /api/v1/billing/bills`
 
-Update payment fields, optional bill total override, and/or apply billing-time line-item edits across orders in the bill's session.
+Update payment fields and/or apply billing-time line-item edits across orders in the bill's session.
 
 **Request body** — `UpdateBillRequestV2`:
 
