@@ -612,7 +612,7 @@ func (s *Service) PlatingFIFO(ctx context.Context, venueID, tableID, sessionID s
 		}
 		orders, err = s.repo.QueryOrdersBySession(ctx, sess.ID)
 	} else {
-		return nil, fmt.Errorf("session_id or table_id required")
+		orders, err = s.repo.QueryOrdersByVenue(ctx, venueID, int32(limit))
 	}
 	if err != nil {
 		return nil, err
@@ -621,18 +621,22 @@ func (s *Service) PlatingFIFO(ctx context.Context, venueID, tableID, sessionID s
 	if len(orders) > limit {
 		orders = orders[:limit]
 	}
-	var sess *TableSession
-	if len(orders) > 0 {
-		sess, _ = s.repo.GetSession(ctx, orders[0].SessionID)
-	}
-	var tids []string
-	if sess != nil {
-		tids = sess.TableIDs
-	}
+	sessionTables := make(map[string][]string)
 	out := make([]PlatingQueueOrder, 0, len(orders))
 	for _, o := range orders {
 		if o.KitchenStatus == KitchenStatusServed {
 			continue
+		}
+		tids, ok := sessionTables[o.SessionID]
+		if !ok {
+			sess, e := s.repo.GetSession(ctx, o.SessionID)
+			if e != nil {
+				return nil, e
+			}
+			if sess != nil {
+				tids = sess.TableIDs
+			}
+			sessionTables[o.SessionID] = tids
 		}
 		out = append(out, PlatingQueueOrder{
 			OrderID:       o.ID,

@@ -583,14 +583,15 @@ curl -sS -X PATCH -H "Authorization: Bearer $TOKEN" -H "Content-Type: applicatio
 ### `GET /api/v1/plating/orders`
 
 FIFO-style queue for plating: orders sorted by `ordered_at`, excluding orders whose **order-level** `kitchen_status` is `served`.
+If `session_id` and `table_id` are omitted, returns all non-served orders for the given/default `venue_id`.
 
 **Query**
 
 | Param | Required | Description |
 |--------|----------|-------------|
-| `session_id` | One of `session_id` or `table_id` | FIFO for this session |
-| `table_id` | One of above | Resolve live session for table, then FIFO |
-| `venue_id` | No | Used with `table_id` (default venue) |
+| `session_id` | No | FIFO for this session (highest priority) |
+| `table_id` | No | Resolve live session for table, then FIFO |
+| `venue_id` | No | Venue scope (default venue); also used for "all non-served orders" mode |
 | `limit` | No | Max orders (default `100`) |
 
 **Response** `200` — `PlatingQueueOrder[]`:
@@ -608,6 +609,11 @@ FIFO-style queue for plating: orders sorted by `ordered_at`, excluding orders wh
 ```
 
 ```bash
+# All non-served orders for venue
+curl -sS -H "Authorization: Bearer $TOKEN" \
+  "https://EXAMPLE.lambda-url.on.aws/api/v1/plating/orders?venue_id=default&limit=50"
+
+# By table
 curl -sS -H "Authorization: Bearer $TOKEN" \
   "https://EXAMPLE.lambda-url.on.aws/api/v1/plating/orders?table_id=T5&venue_id=default&limit=50"
 ```
