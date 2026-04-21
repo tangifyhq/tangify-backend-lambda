@@ -4,12 +4,62 @@ meta {
   seq: 4
 }
 
-get {
-  url: 
-  body: none
+post {
+  url: {{api_url}}/api/v1/billing/invoice-number
+  body: json
   auth: inherit
+}
+
+body:json {
+  {
+    "bill_id": "bill_6b11733c-9f51-4c7d-8e61-012940141d68"
+  }
 }
 
 settings {
   encodeUrl: true
+  timeout: 0
+}
+
+example {
+  name: success
+  
+  request: {
+    url: {{api_url}}/api/v1/billing/invoice-number
+    method: POST
+    mode: json
+    body:json: {
+      {
+        "bill_id": "bill_6b11733c-9f51-4c7d-8e61-012940141d68"
+      }
+    }
+  }
+  
+  response: {
+    headers: {
+      date: Tue, 21 Apr 2026 20:31:49 GMT
+      content-type: application/json
+      content-length: 111
+      connection: keep-alive
+      x-amzn-requestid: e79558d6-7cd2-483e-ad44-312e89122d3b
+      x-amzn-trace-id: Root=1-69e7deb5-458af46a1ece0bd407747a45;Sampled=1;Lineage=1:f3c3df5e:0
+    }
+  
+    status: {
+      code: 200
+      text: OK
+    }
+  
+    body: {
+      type: json
+      content: '''
+        {
+          "invoice_number": "2026-000001",
+          "bill_id": "bill_6b11733c-9f51-4c7d-8e61-012940141d68",
+          "year": 2026,
+          "sequence": 1
+        }
+      '''
+    }
+  }
 }
