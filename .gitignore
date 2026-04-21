@@ -25,3 +25,4 @@ aws-sam-cli-managed-default/
 *.log
 
 
+node_modules

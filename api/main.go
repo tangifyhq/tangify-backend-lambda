@@ -329,6 +329,38 @@ func handler(ctx context.Context, request events.LambdaFunctionURLRequest) (even
 		return ApiResponse.Success(data), nil
 	}
 
+	if method == "POST" && route == "/api/v1/billing/invoice-number" {
+		var body billing.GenerateInvoiceNumberRequest
+		if err := json.Unmarshal([]byte(request.Body), &body); err != nil {
+			return ApiResponse.BadRequest("Invalid JSON body"), nil
+		}
+		if strings.TrimSpace(body.BillID) == "" {
+			return ApiResponse.BadRequest("bill_id is required"), nil
+		}
+
+		billRepo := billing.NewRepository(dynamoDBClient)
+		billRow, err := billRepo.GetBill(ctx, body.BillID)
+		if err != nil {
+			return ApiResponse.Error(http.StatusInternalServerError, err.Error()), nil
+		}
+		if billRow == nil {
+			return ApiResponse.Error(http.StatusNotFound, "bill not found"), nil
+		}
+
+		workerResp, err := fetchInvoiceNumber(ctx, body.BillID)
+		if err != nil {
+			return ApiResponse.Error(http.StatusBadGateway, err.Error()), nil
+		}
+
+		billRow.InvoiceNumber = workerResp.InvoiceNumber
+		billRow.UpdatedAt = commonUtils.GetCurrentTimestamp()
+		if err := billRepo.PutBill(ctx, billRow); err != nil {
+			return ApiResponse.Error(http.StatusInternalServerError, err.Error()), nil
+		}
+
+		return ApiResponse.Success(workerResp), nil
+	}
+
 	if method == "POST" && route == "/api/v1/billing/sessions/close" {
 		var body billing.CloseTableRequest
 		if err := json.Unmarshal([]byte(request.Body), &body); err != nil {

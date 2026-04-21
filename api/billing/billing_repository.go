@@ -448,6 +448,9 @@ func encodeBill(b *Bill) (map[string]types.AttributeValue, error) {
 		"discounts":               &types.AttributeValueMemberL{Value: discounts},
 		"taxes":                   &types.AttributeValueMemberL{Value: taxes},
 	}
+	if b.InvoiceNumber != "" {
+		m["invoice_number"] = &types.AttributeValueMemberS{Value: b.InvoiceNumber}
+	}
 	if b.CustomerID != "" {
 		m["customer_id"] = &types.AttributeValueMemberS{Value: b.CustomerID}
 	}
@@ -464,6 +467,9 @@ func decodeBill(item map[string]types.AttributeValue) (*Bill, error) {
 	}
 	if v, ok := item["session_id"].(*types.AttributeValueMemberS); ok {
 		b.SessionID = v.Value
+	}
+	if v, ok := item["invoice_number"].(*types.AttributeValueMemberS); ok {
+		b.InvoiceNumber = v.Value
 	}
 	if v, ok := item["payment_method"].(*types.AttributeValueMemberS); ok {
 		b.PaymentMethod = v.Value

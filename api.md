@@ -492,6 +492,40 @@ curl -sS -X PATCH -H "Authorization: Bearer $TOKEN" -H "Content-Type: applicatio
 
 ---
 
+### `POST /api/v1/billing/invoice-number`
+
+Generate/fetch invoice number for a bill by calling the invoice worker and persist `invoice_number` on the bill row.
+
+**Request body** — `GenerateInvoiceNumberRequest`:
+
+```json
+{ "bill_id": "bill_6b11733c-9f51-4c7d-8e61-012940141d68" }
+```
+
+**Response** `200`:
+
+```json
+{
+  "invoice_number": "2026-000001",
+  "bill_id": "bill_6b11733c-9f51-4c7d-8e61-012940141d68",
+  "year": 2026,
+  "sequence": 1
+}
+```
+
+**Errors**:
+- `400` if `bill_id` missing
+- `404` if bill not found
+- `502` if invoice worker call fails
+
+```bash
+curl -sS -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"bill_id":"bill_6b11733c-9f51-4c7d-8e61-012940141d68"}' \
+  "https://EXAMPLE.lambda-url.on.aws/api/v1/billing/invoice-number"
+```
+
+---
+
 ### `POST /api/v1/billing/sessions/close`
 
 Finalize checkout: mark bill paid and session **closed**.

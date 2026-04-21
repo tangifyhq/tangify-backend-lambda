@@ -94,6 +94,7 @@ type Order struct {
 type Bill struct {
 	ID                   string         `json:"id"`
 	SessionID            string         `json:"session_id"`
+	InvoiceNumber        string         `json:"invoice_number,omitempty"`
 	TableIDs             []string       `json:"table_ids"` // snapshot for receipt / audit
 	CustomerID           string         `json:"customer_id,omitempty"`
 	StaffID              string         `json:"staff_id,omitempty"`
@@ -193,6 +194,10 @@ type UpdateBillRequestV2 struct {
 	PaymentMethod   *string              `json:"payment_method,omitempty"`
 	PaymentStatus   *string              `json:"payment_status,omitempty"`
 	LineItemUpdates []BillLineItemUpdate `json:"line_item_updates,omitempty"`
+}
+
+type GenerateInvoiceNumberRequest struct {
+	BillID string `json:"bill_id"`
 }
 
 type BillLineItemUpdate struct {

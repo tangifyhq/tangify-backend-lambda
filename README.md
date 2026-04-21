@@ -63,10 +63,23 @@ Set these in Lambda (or local env):
 - `GOOGLE_SHEETS_API_KEY` - required for `GET /api/v1/menu`
 - `GOOGLE_SHEET_ID` - required for `GET /api/v1/menu`
 - `GOOGLE_SHEET_NAME` - optional for `GET /api/v1/menu`
+- `ABLY_KEY` - optional; if set, backend publishes order events to Ably channels
 
 Also ensure SSM contains:
 
 - `tangify.jwt.secret` (used to sign/verify JWTs)
+
+## Realtime events (Ably)
+
+When `ABLY_KEY` is configured, the API publishes:
+
+- `kitchen:{venue_id}`
+  - `order.created` on order creation
+  - `order.updated` on order updates
+- `waiter:{venue_id}`
+  - `order.ready` when an order status becomes `ready`
+
+If `ABLY_KEY` is missing, API behavior is unchanged and publish calls are skipped.
 
 ## Build and test
 

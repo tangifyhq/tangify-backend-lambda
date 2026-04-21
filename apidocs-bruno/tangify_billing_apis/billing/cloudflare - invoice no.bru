@@ -1,0 +1,68 @@
+meta {
+  name: cloudflare - invoice no.
+  type: http
+  seq: 3
+}
+
+post {
+  url: https://invoice-number-cf-worker.subnub.workers.dev/
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "bill_id": "bill_6b11733c-9f51-4c7d-8e61-012940141d68"
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
+
+example {
+  name: success
+  
+  request: {
+    url: https://invoice-number-cf-worker.subnub.workers.dev/
+    method: POST
+    mode: json
+    body:json: {
+      {
+        "bill_id": "bill_6b11733c-9f51-4c7d-8e61-012940141d68"
+      }
+    }
+  }
+  
+  response: {
+    headers: {
+      date: Tue, 21 Apr 2026 20:21:36 GMT
+      content-type: application/json
+      transfer-encoding: chunked
+      connection: keep-alive
+      report-to: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=uT3hba3MuVqIIXMZL46OrboOZotH76SPzN8Uhr49qBuA1n%2FQThHxBR2V5Fup3o2x9DKOJDf%2Fk1aQpXS0yj7NwCj10HbhgQvzuJYbWHOojQ9L1b%2FsxOBFau7Ua%2BXdpG4XvP%2BzOYlNw38atDRkB%2FvK3ACELvyqldn8eAXp9z6g5fSXZ8K5uV4ePinz"}]}
+      nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+      server: cloudflare
+      cf-ray: 9eff1894b90e3c07-BLR
+      alt-svc: h3=":443"; ma=86400
+    }
+  
+    status: {
+      code: 200
+      text: OK
+    }
+  
+    body: {
+      type: json
+      content: '''
+        {
+          "invoice_number": "2026-000001",
+          "bill_id": "bill_6b11733c-9f51-4c7d-8e61-012940141d68",
+          "year": 2026,
+          "sequence": 1
+        }
+      '''
+    }
+  }
+}

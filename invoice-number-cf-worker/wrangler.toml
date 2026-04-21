@@ -1,0 +1,11 @@
+name = "invoice-number-cf-worker"
+main = "src/index.ts"
+compatibility_date = "2026-04-20"
+
+[[durable_objects.bindings]]
+name = "INVOICE_COUNTER"
+class_name = "InvoiceYearCounter"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["InvoiceYearCounter"]
