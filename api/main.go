@@ -45,7 +45,6 @@ func NewAppContext(claims *MyClaims) *AppContext {
 		JWTClaims: claims,
 	}
 }
-
 func doJwtAuth(request events.LambdaFunctionURLRequest, jwtSecret string, appContext *AppContext) error {
 	token := strings.TrimPrefix(request.Headers["authorization"], "Bearer ")
 	if token == "" {
@@ -92,6 +91,10 @@ func headerGet(headers map[string]string, key string) string {
 
 func handler(ctx context.Context, request events.LambdaFunctionURLRequest) (events.LambdaFunctionURLResponse, error) {
 	awsUtils := NewAwsUtils()
+	ablyUtils, ablyErr := NewAblyUtils()
+	if ablyErr != nil {
+		fmt.Println("error initializing Ably client: ", ablyErr)
+	}
 	route := request.RawPath
 	method := request.RequestContext.HTTP.Method
 	fmt.Println("method & route: ", method, route)
@@ -239,6 +242,11 @@ func handler(ctx context.Context, request events.LambdaFunctionURLRequest) (even
 			}
 			return ApiResponse.Error(http.StatusBadRequest, err.Error()), nil
 		}
+		for _, ord := range data.Orders {
+			if pubErr := ablyUtils.PublishJSON(ctx, kitchenChannel(ord.VenueID), "order.created", ord); pubErr != nil {
+				fmt.Println("ably publish error (kitchen order.created): ", pubErr)
+			}
+		}
 		return ApiResponse.Success(data), nil
 	}
 
@@ -251,6 +259,9 @@ func handler(ctx context.Context, request events.LambdaFunctionURLRequest) (even
 		if err != nil {
 			return ApiResponse.Error(http.StatusBadRequest, err.Error()), nil
 		}
+		if pubErr := ablyUtils.PublishJSON(ctx, kitchenChannel(data.VenueID), "order.created", data); pubErr != nil {
+			fmt.Println("ably publish error (kitchen order.created): ", pubErr)
+		}
 		return ApiResponse.Success(data), nil
 	}
 
@@ -262,6 +273,14 @@ func handler(ctx context.Context, request events.LambdaFunctionURLRequest) (even
 		data, err := billingService.UpdateOrderWithClock(ctx, body, commonUtils)
 		if err != nil {
 			return ApiResponse.Error(http.StatusBadRequest, err.Error()), nil
+		}
+		if pubErr := ablyUtils.PublishJSON(ctx, kitchenChannel(data.VenueID), "order.updated", data); pubErr != nil {
+			fmt.Println("ably publish error (kitchen order.updated): ", pubErr)
+		}
+		if data.KitchenStatus == billing.KitchenStatusReady {
+			if pubErr := ablyUtils.PublishJSON(ctx, waiterChannel(data.VenueID), "order.ready", data); pubErr != nil {
+				fmt.Println("ably publish error (waiter order.ready): ", pubErr)
+			}
 		}
 		return ApiResponse.Success(data), nil
 	}
@@ -339,6 +358,14 @@ func handler(ctx context.Context, request events.LambdaFunctionURLRequest) (even
 		if err != nil {
 			return ApiResponse.Error(http.StatusBadRequest, err.Error()), nil
 		}
+		if pubErr := ablyUtils.PublishJSON(ctx, kitchenChannel(data.VenueID), "order.updated", data); pubErr != nil {
+			fmt.Println("ably publish error (kitchen order.updated): ", pubErr)
+		}
+		if data.KitchenStatus == billing.KitchenStatusReady {
+			if pubErr := ablyUtils.PublishJSON(ctx, waiterChannel(data.VenueID), "order.ready", data); pubErr != nil {
+				fmt.Println("ably publish error (waiter order.ready): ", pubErr)
+			}
+		}
 		return ApiResponse.Success(data), nil
 	}
 
@@ -365,6 +392,14 @@ func handler(ctx context.Context, request events.LambdaFunctionURLRequest) (even
 		data, err := billingService.PatchOrderKitchenStatus(ctx, body, commonUtils)
 		if err != nil {
 			return ApiResponse.Error(http.StatusBadRequest, err.Error()), nil
+		}
+		if pubErr := ablyUtils.PublishJSON(ctx, kitchenChannel(data.VenueID), "order.updated", data); pubErr != nil {
+			fmt.Println("ably publish error (kitchen order.updated): ", pubErr)
+		}
+		if data.KitchenStatus == billing.KitchenStatusReady {
+			if pubErr := ablyUtils.PublishJSON(ctx, waiterChannel(data.VenueID), "order.ready", data); pubErr != nil {
+				fmt.Println("ably publish error (waiter order.ready): ", pubErr)
+			}
 		}
 		return ApiResponse.Success(data), nil
 	}
