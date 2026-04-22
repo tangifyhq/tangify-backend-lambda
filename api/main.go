@@ -16,6 +16,7 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 
 	"tangify-backend-lambda/billing"
+	"tangify-backend-lambda/loyalty"
 	"tangify-backend-lambda/menu"
 	"tangify-backend-lambda/users"
 )
@@ -32,6 +33,7 @@ func getJwtClaims(jwtToken string, jwtSecret string) (*MyClaims, error) {
 var whitelistedRoutes = []string{
 	"/api/v1/auth/login",
 	"/api/v1/users/bootstrap",
+	"/api/v1/users/customer-onboard",
 	"/api/v1/menu",
 	"/api/v1/health",
 }
@@ -136,6 +138,8 @@ func handler(ctx context.Context, request events.LambdaFunctionURLRequest) (even
 		j := NewJwtUtils(jwtSecret)
 		return j.GenerateJWT(userID, name, role, 24*time.Hour)
 	})
+	billRepo := billing.NewRepository(dynamoDBClient)
+	loyaltyService := loyalty.NewService(loyalty.NewRepository(dynamoDBClient), billRepo)
 
 	if method == "POST" && route == "/api/v1/auth/login" {
 		var body users.LoginRequest
@@ -168,6 +172,28 @@ func handler(ctx context.Context, request events.LambdaFunctionURLRequest) (even
 		return ApiResponse.Success(data), nil
 	}
 
+	if method == "POST" && route == "/api/v1/users/customer-onboard" {
+		want := strings.TrimSpace(os.Getenv("CF_SECRET"))
+		if want == "" {
+			return ApiResponse.Error(http.StatusForbidden, "CF onboarding is not configured"), nil
+		}
+		if strings.TrimSpace(headerGet(request.Headers, "X-CF-Secret")) != want {
+			return ApiResponse.Unauthorized("Invalid CF secret"), nil
+		}
+		var body users.CustomerOnboardRequest
+		if err := json.Unmarshal([]byte(request.Body), &body); err != nil {
+			return ApiResponse.BadRequest("Invalid JSON body"), nil
+		}
+		user, err := usersService.CreateOrGetCustomer(ctx, body.Phone, body.Name, commonUtils.GetCurrentTimestamp())
+		if err != nil {
+			return ApiResponse.Error(http.StatusBadRequest, err.Error()), nil
+		}
+		if err := sendGupshupPlaceholderMessage(ctx, user.Phone, user.Name); err != nil {
+			return ApiResponse.Error(http.StatusBadGateway, err.Error()), nil
+		}
+		return ApiResponse.Success(user), nil
+	}
+
 	if !slices.Contains(whitelistedRoutes, route) {
 		err = doJwtAuth(request, jwtSecret, appContext)
 		if err != nil {
@@ -175,7 +201,7 @@ func handler(ctx context.Context, request events.LambdaFunctionURLRequest) (even
 		}
 	}
 
-	billingService := billing.NewService(billing.NewRepository(dynamoDBClient))
+	billingService := billing.NewService(billRepo)
 	staffID := staffIDFromContext(appContext)
 
 	// --- Users (JWT) ---
@@ -338,7 +364,6 @@ func handler(ctx context.Context, request events.LambdaFunctionURLRequest) (even
 			return ApiResponse.BadRequest("bill_id is required"), nil
 		}
 
-		billRepo := billing.NewRepository(dynamoDBClient)
 		billRow, err := billRepo.GetBill(ctx, body.BillID)
 		if err != nil {
 			return ApiResponse.Error(http.StatusInternalServerError, err.Error()), nil
@@ -359,6 +384,39 @@ func handler(ctx context.Context, request events.LambdaFunctionURLRequest) (even
 		}
 
 		return ApiResponse.Success(workerResp), nil
+	}
+
+	if method == "POST" && route == "/api/v1/loyalty/points/add" {
+		var body loyalty.AddPointsRequest
+		if err := json.Unmarshal([]byte(request.Body), &body); err != nil {
+			return ApiResponse.BadRequest("Invalid JSON body"), nil
+		}
+		data, err := loyaltyService.AddPointsForBill(ctx, body, commonUtils.GetCurrentTimestamp())
+		if err != nil {
+			return ApiResponse.Error(http.StatusBadRequest, err.Error()), nil
+		}
+		return ApiResponse.Success(data), nil
+	}
+
+	if method == "GET" && route == "/api/v1/loyalty/discount" {
+		userID := queryParam(request, "user_id")
+		data, err := loyaltyService.GetPointsDiscount(ctx, loyalty.PointsDiscountRequest{UserID: userID})
+		if err != nil {
+			return ApiResponse.Error(http.StatusBadRequest, err.Error()), nil
+		}
+		return ApiResponse.Success(data), nil
+	}
+
+	if method == "POST" && route == "/api/v1/loyalty/discount/apply" {
+		var body loyalty.ApplyDiscountRequest
+		if err := json.Unmarshal([]byte(request.Body), &body); err != nil {
+			return ApiResponse.BadRequest("Invalid JSON body"), nil
+		}
+		data, err := loyaltyService.ApplyDiscount(ctx, body, commonUtils.GetCurrentTimestamp())
+		if err != nil {
+			return ApiResponse.Error(http.StatusBadRequest, err.Error()), nil
+		}
+		return ApiResponse.Success(data), nil
 	}
 
 	if method == "POST" && route == "/api/v1/billing/sessions/close" {

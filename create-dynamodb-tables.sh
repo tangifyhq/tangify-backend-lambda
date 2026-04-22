@@ -18,6 +18,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BILLING_JSON_DIR="${SCRIPT_DIR}/dynamodb/billing"
 USERS_JSON_DIR="${SCRIPT_DIR}/dynamodb/users"
+LOYALTY_JSON_DIR="${SCRIPT_DIR}/dynamodb/loyalty"
 
 REGION="${AWS_REGION:-ap-south-1}"
 export AWS_DEFAULT_REGION="${REGION}"
@@ -65,9 +66,10 @@ create_one "${BILLING_JSON_DIR}" tangify_sessions
 create_one "${BILLING_JSON_DIR}" tangify_orders
 create_one "${BILLING_JSON_DIR}" tangify_bills
 create_one "${USERS_JSON_DIR}" tangify_users
+create_one "${LOYALTY_JSON_DIR}" tangify_points_wallet
 
 echo ""
-echo "Done. Tables: tangify_sessions, tangify_orders, tangify_bills, tangify_users"
+echo "Done. Tables: tangify_sessions, tangify_orders, tangify_bills, tangify_users, tangify_points_wallet"
 if [[ -n "${ENDPOINT_URL:-}" ]]; then
   echo "List: aws dynamodb list-tables --endpoint-url \"${ENDPOINT_URL}\" --region ${REGION}"
 else

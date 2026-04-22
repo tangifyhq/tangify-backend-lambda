@@ -2,8 +2,8 @@
 
 Base URL is your Lambda Function URL or API Gateway stage URL (examples use `https://example.lambda-url.us-east-1.on.aws`).
 
-- **Public (no JWT):** `GET /api/v1/health`, `GET /api/v1/menu`, `POST /api/v1/auth/login`, `POST /api/v1/users/bootstrap` (bootstrap requires `X-Bootstrap-Secret` header)  
-- **Protected:** other routes require header `Authorization: Bearer <JWT>`  
+- **Public (no JWT):** `GET /api/v1/health`, `GET /api/v1/menu`, `POST /api/v1/auth/login`, `POST /api/v1/users/bootstrap` (bootstrap requires `X-Bootstrap-Secret` header), `POST /api/v1/users/customer-onboard` (requires `X-CF-Secret`)  
+- **Protected:** other routes require header `Authorization: Bearer <JWT>`
 
 Successful responses return **JSON bodies directly** (no `{ "data": ... }` wrapper). Errors use  
 `{ "error": "<message>" }` with appropriate HTTP status (`400`, `401`, `500`, etc.).
@@ -55,21 +55,24 @@ curl -sS "https://EXAMPLE.lambda-url.on.aws/api/v1/menu"
 
 ## Users & auth
 
-Accounts live in DynamoDB table `tangify_users`. Create it (with billing tables) via `./create-dynamodb-tables.sh` from the repo root, or use the JSON in `dynamodb/users/tangify_users.json`. Each user has a random **`pw_salt`**; the server bcrypt-hashes a value derived from **password + salt** (see code for the exact derivation and the bcrypt 72-byte limit). Responses never include `pw_hash` or `pw_salt`.
+Accounts live in DynamoDB table `tangify_users`. Create it (with billing tables) via `./create-dynamodb-tables.sh` from the repo root, or use the JSON in `dynamodb/users/tangify_users.json`. Each user has a random `**pw_salt**`; the server bcrypt-hashes a value derived from **password + salt** (see code for the exact derivation and the bcrypt 72-byte limit). Responses never include `pw_hash` or `pw_salt`.
 
-**Roles:** `waiter`, `kitchen`, `admin`.
+**Roles:** `waiter`, `kitchen`, `admin`, `customer`.
 
 **JWT:** HS256, **24h** TTL. Custom claims: `identity` (user id), `name`, `role`; registered claims include `sub` (same as user id), `exp`, `iat`. Send on protected routes as `Authorization: Bearer <token>`.
 
-| Method | Path | Auth |
-|--------|------|------|
-| `POST` | `/api/v1/auth/login` | Public |
-| `POST` | `/api/v1/users/bootstrap` | Header `X-Bootstrap-Secret` (no JWT) |
-| `GET` | `/api/v1/users/me` | JWT |
-| `POST` | `/api/v1/users` | JWT **admin** |
-| `PATCH` | `/api/v1/users/password` | JWT |
 
-Invalid JSON bodies return **`400`** with `Invalid JSON body` where applicable.
+| Method  | Path                      | Auth                                 |
+| ------- | ------------------------- | ------------------------------------ |
+| `POST`  | `/api/v1/auth/login`      | Public                               |
+| `POST`  | `/api/v1/users/bootstrap` | Header `X-Bootstrap-Secret` (no JWT) |
+| `POST`  | `/api/v1/users/customer-onboard` | Header `X-CF-Secret` (no JWT, server-to-server) |
+| `GET`   | `/api/v1/users/me`        | JWT                                  |
+| `POST`  | `/api/v1/users`           | JWT **admin**                        |
+| `PATCH` | `/api/v1/users/password`  | JWT                                  |
+
+
+Invalid JSON bodies return `**400`** with `Invalid JSON body` where applicable.
 
 ### `POST /api/v1/auth/login`
 
@@ -107,11 +110,38 @@ curl -sS -X POST -H "Content-Type: application/json" \
 
 ---
 
+### `POST /api/v1/users/customer-onboard`
+
+Server-to-server endpoint. Validates `X-CF-Secret` against env var `CF_SECRET`, creates/gets a user with role `customer`, and sends a placeholder WhatsApp message via Gupshup.
+
+**Request body**:
+
+```json
+{ "phone": "+919876543210", "name": "Customer Name" }
+```
+
+**Response** `200` — `UserPublic`.
+
+**Errors:**
+- `403` when `CF_SECRET` not configured
+- `401` invalid/missing `X-CF-Secret`
+- `400` invalid payload
+- `502` Gupshup send failure
+
+```bash
+curl -sS -X POST -H "Content-Type: application/json" \
+  -H "X-CF-Secret: $CF_SECRET" \
+  -d '{"phone":"+919876543210","name":"Customer Name"}' \
+  "https://EXAMPLE.lambda-url.on.aws/api/v1/users/customer-onboard"
+```
+
+---
+
 ### `POST /api/v1/users/bootstrap`
 
-Provisions a user when **`TANGIFY_BOOTSTRAP_SECRET`** is set in the Lambda environment. **No JWT.** Header **`X-Bootstrap-Secret`** must match the env value exactly.
+Provisions a user when `**TANGIFY_BOOTSTRAP_SECRET**` is set in the Lambda environment. **No JWT.** Header `**X-Bootstrap-Secret`** must match the env value exactly.
 
-If `role` is omitted, it defaults to **`admin`**. Same validation as create user: **either phone or email is required** (you can send both), along with **name** and **password**; **password** at least **8** characters; **role** must be one of `waiter`, `kitchen`, `admin`; provided email/phone values must be unique.
+If `role` is omitted, it defaults to `**admin**`. Same validation as create user: **either phone or email is required** (you can send both), along with **name** and **password**; **password** at least **8** characters; **role** must be one of `waiter`, `kitchen`, `admin`; provided email/phone values must be unique.
 
 **Request body** — `BootstrapUserRequest`:
 
@@ -142,7 +172,7 @@ curl -sS -X POST -H "Content-Type: application/json" \
 
 **Admin only** (`role` in JWT must be `admin`). Creates a user with the given password.
 
-**Request body** — `CreateUserRequest` (same fields as bootstrap; **`role`** required here — no default):
+**Request body** — `CreateUserRequest` (same fields as bootstrap; `**role`** required here — no default):
 
 ```json
 {
@@ -170,7 +200,7 @@ curl -sS -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application
 
 ### `GET /api/v1/users/me`
 
-Returns the user for JWT claim **`identity`**.
+Returns the user for JWT claim `**identity**`.
 
 **Response** `200` — `UserPublic` (same as login `user`).
 
@@ -187,8 +217,8 @@ curl -sS -H "Authorization: Bearer $TOKEN" \
 
 **Who may change whom**
 
-- **`admin`:** may set a new password for **any** user. Send `user_id` and `new_password` only; **`current_password` is not used**.
-- **Non-admin:** may change **only their own** password. Send `user_id` equal to your id, plus **`current_password`** and **`new_password`**.
+- `**admin`:** may set a new password for **any** user. Send `user_id` and `new_password` only; `**current_password` is not used**.
+- **Non-admin:** may change **only their own** password. Send `user_id` equal to your id, plus `**current_password`** and `**new_password**`.
 
 **Request body** — `ChangePasswordRequest`:
 
@@ -220,13 +250,15 @@ Default venue for reads/writes is `TANGIFY_VENUE_ID` env or `"default"`. Session
 
 ### Order channels (`channel`)
 
-| Value | Description |
-|--------|----------------|
-| `dining_table` | In-restaurant table |
-| `takeaway` | Takeaway |
-| `whatsapp_quickdelivery` | WhatsApp quick delivery |
+
+| Value                     | Description              |
+| ------------------------- | ------------------------ |
+| `dining_table`            | In-restaurant table      |
+| `takeaway`                | Takeaway                 |
+| `whatsapp_quickdelivery`  | WhatsApp quick delivery  |
 | `whatsapp_normaldelivery` | WhatsApp normal delivery |
-| `neighbour_delivery` | Neighbour delivery |
+| `neighbour_delivery`      | Neighbour delivery       |
+
 
 ### `GET /api/v1/billing/live-orders`
 
@@ -234,9 +266,11 @@ Live or billing sessions with their orders (waiter board).
 
 **Query**
 
-| Param | Required | Description |
-|--------|----------|-------------|
-| `venue_id` | No | Defaults to server default venue |
+
+| Param      | Required | Description                      |
+| ---------- | -------- | -------------------------------- |
+| `venue_id` | No       | Defaults to server default venue |
+
 
 **Response** `200` — `LiveOrdersGroupedResponse`:
 
@@ -284,7 +318,7 @@ Open a table session and place the **first** order (tables become live).
 ```
 
 - `table_ids`: one table or multiple for **joined** tables.  
-- Line `id` / `status` may be omitted; server fills defaults (`line_*` ids, `pending`).  
+- Line `id` / `status` may be omitted; server fills defaults (`line_`* ids, `pending`).  
 - `price` is in **paise** (integer). Totals use `sum(price * quantity)` per order.
 - If any requested `table_id` already belongs to a `live`/`billing` session, API returns `409` and asks you to add orders to the existing session.
 
@@ -394,11 +428,13 @@ List orders either by session or by physical table.
 
 **Query (one required)**
 
-| Param | Description |
-|--------|-------------|
-| `session_id` | All orders for this session |
-| `table_id` | Orders for the **live/billing** session that contains this table |
-| `venue_id` | With `table_id`, optional venue (defaults server-side) |
+
+| Param        | Description                                                      |
+| ------------ | ---------------------------------------------------------------- |
+| `session_id` | All orders for this session                                      |
+| `table_id`   | Orders for the **live/billing** session that contains this table |
+| `venue_id`   | With `table_id`, optional venue (defaults server-side)           |
+
 
 **Response** `200` — `Order[]`.
 
@@ -476,6 +512,7 @@ Update payment fields and/or apply billing-time line-item edits across orders in
 ```
 
 `line_item_updates` behavior:
+
 - `user_override.quantity`: optional per-line quantity override (`> 0`)
 - `user_override.price`: optional per-line price override (paise)
 - `removed`: soft remove from billing totals (`true` also sets line status to `cancelled`)
@@ -514,6 +551,7 @@ Generate/fetch invoice number for a bill by calling the invoice worker and persi
 ```
 
 **Errors**:
+
 - `400` if `bill_id` missing
 - `404` if bill not found
 - `502` if invoice worker call fails
@@ -550,6 +588,69 @@ curl -sS -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application
 
 ---
 
+## Loyalty
+
+Policy:
+- Earn `10` points for every `Rs 250` spend (`25000` paise).
+- Redeem only in blocks of `100` points.
+- Discount per `100` points is controlled by env `LOYALTY_DISCOUNT_PER_100_POINTS_PAISE` (default `25000` paise).
+
+### `POST /api/v1/loyalty/points/add`
+
+Award points for a bill to a user's wallet.
+
+```json
+{ "user_id": "user_xxx", "bill_id": "bill_xxx" }
+```
+
+Response:
+
+```json
+{
+  "user_id": "user_xxx",
+  "bill_id": "bill_xxx",
+  "points_earned": 20,
+  "current_balance": 120
+}
+```
+
+### `GET /api/v1/loyalty/discount?user_id=<id>`
+
+Get current points and redeemable discount.
+
+```json
+{
+  "user_id": "user_xxx",
+  "current_points": 230,
+  "redeemable_points": 200,
+  "discount_per_100_points": 25000,
+  "redeemable_discount": 50000
+}
+```
+
+### `POST /api/v1/loyalty/discount/apply`
+
+Apply loyalty discount to a bill (uses multiples of 100 points only).
+
+```json
+{ "user_id": "user_xxx", "bill_id": "bill_xxx" }
+```
+
+Response:
+
+```json
+{
+  "user_id": "user_xxx",
+  "bill_id": "bill_xxx",
+  "points_redeemed": 100,
+  "discount_applied": 25000,
+  "remaining_points": 130,
+  "updated_bill_total": 175000
+}
+```
+
+---
+
 ## Kitchen
 
 ### `GET /api/v1/kitchen/item-board`
@@ -558,9 +659,11 @@ Expand all venue orders into per-line rows (excludes lines already `served` or `
 
 **Query**
 
-| Param | Required |
-|--------|----------|
+
+| Param      | Required            |
+| ---------- | ------------------- |
 | `venue_id` | No (server default) |
+
 
 **Response** `200` — `KitchenDishCount[]`:
 
@@ -618,12 +721,14 @@ If `session_id` and `table_id` are omitted, returns all non-served orders for th
 
 **Query**
 
-| Param | Required | Description |
-|--------|----------|-------------|
-| `session_id` | No | FIFO for this session (highest priority) |
-| `table_id` | No | Resolve live session for table, then FIFO |
-| `venue_id` | No | Venue scope (default venue); also used for "all non-served orders" mode |
-| `limit` | No | Max orders (default `100`) |
+
+| Param        | Required | Description                                                             |
+| ------------ | -------- | ----------------------------------------------------------------------- |
+| `session_id` | No       | FIFO for this session (highest priority)                                |
+| `table_id`   | No       | Resolve live session for table, then FIFO                               |
+| `venue_id`   | No       | Venue scope (default venue); also used for "all non-served orders" mode |
+| `limit`      | No       | Max orders (default `100`)                                              |
+
 
 **Response** `200` — `PlatingQueueOrder[]`:
 
@@ -682,7 +787,7 @@ curl -sS -X PATCH -H "Authorization: Bearer $TOKEN" -H "Content-Type: applicatio
 
 ## JWT for billing, kitchen, and plating
 
-Call **`POST /api/v1/auth/login`** (or use a token from an admin-created user), then pass **`Authorization: Bearer <jwt>`** on routes that are not public. See **Users & auth** above.
+Call `**POST /api/v1/auth/login**` (or use a token from an admin-created user), then pass `**Authorization: Bearer <jwt>**` on routes that are not public. See **Users & auth** above.
 
 ---
 

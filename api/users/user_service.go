@@ -23,11 +23,41 @@ func NewService(repo *Repository, issueToken func(userID, name, role string) (st
 
 func validRole(r string) bool {
 	switch r {
-	case RoleWaiter, RoleKitchen, RoleAdmin:
+	case RoleWaiter, RoleKitchen, RoleAdmin, RoleCustomer:
 		return true
 	default:
 		return false
 	}
+}
+
+// CreateOrGetCustomer creates a customer user by phone if not present.
+func (s *Service) CreateOrGetCustomer(ctx context.Context, phone, name string, now int64) (*UserPublic, error) {
+	phone = NormalizePhone(phone)
+	name = strings.TrimSpace(name)
+	if phone == "" || name == "" {
+		return nil, fmt.Errorf("phone and name required")
+	}
+	if existing, err := s.repo.GetUserByPhone(ctx, phone); err != nil {
+		return nil, err
+	} else if existing != nil {
+		p := existing.Public()
+		return &p, nil
+	}
+	u := &User{
+		ID:        uuid.NewString(),
+		Phone:     phone,
+		Name:      name,
+		Role:      RoleCustomer,
+		PwSalt:    "",
+		PwHash:    "",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := s.repo.PutUser(ctx, u); err != nil {
+		return nil, err
+	}
+	p := u.Public()
+	return &p, nil
 }
 
 const pwSaltBytes = 16

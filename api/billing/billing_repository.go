@@ -451,6 +451,21 @@ func encodeBill(b *Bill) (map[string]types.AttributeValue, error) {
 	if b.InvoiceNumber != "" {
 		m["invoice_number"] = &types.AttributeValueMemberS{Value: b.InvoiceNumber}
 	}
+	if b.LoyaltyUserID != "" {
+		m["loyalty_user_id"] = &types.AttributeValueMemberS{Value: b.LoyaltyUserID}
+	}
+	if b.LoyaltyPointsProcessed {
+		m["loyalty_points_processed"] = &types.AttributeValueMemberBOOL{Value: true}
+	}
+	if b.LoyaltyPointsEarned != 0 {
+		m["loyalty_points_earned"] = &types.AttributeValueMemberN{Value: strconv.FormatInt(b.LoyaltyPointsEarned, 10)}
+	}
+	if b.LoyaltyPointsRedeemed != 0 {
+		m["loyalty_points_redeemed"] = &types.AttributeValueMemberN{Value: strconv.FormatInt(b.LoyaltyPointsRedeemed, 10)}
+	}
+	if b.LoyaltyDiscountApplied != 0 {
+		m["loyalty_discount_applied"] = &types.AttributeValueMemberN{Value: strconv.FormatInt(b.LoyaltyDiscountApplied, 10)}
+	}
 	if b.CustomerID != "" {
 		m["customer_id"] = &types.AttributeValueMemberS{Value: b.CustomerID}
 	}
@@ -471,6 +486,12 @@ func decodeBill(item map[string]types.AttributeValue) (*Bill, error) {
 	if v, ok := item["invoice_number"].(*types.AttributeValueMemberS); ok {
 		b.InvoiceNumber = v.Value
 	}
+	if v, ok := item["loyalty_user_id"].(*types.AttributeValueMemberS); ok {
+		b.LoyaltyUserID = v.Value
+	}
+	if v, ok := item["loyalty_points_processed"].(*types.AttributeValueMemberBOOL); ok {
+		b.LoyaltyPointsProcessed = v.Value
+	}
 	if v, ok := item["payment_method"].(*types.AttributeValueMemberS); ok {
 		b.PaymentMethod = v.Value
 	}
@@ -488,6 +509,9 @@ func decodeBill(item map[string]types.AttributeValue) (*Bill, error) {
 	b.TotalTaxInPaise, _ = numAttr(item, "total_tax_in_paise")
 	b.TotalDiscountInPaise, _ = numAttr(item, "total_discount_in_paise")
 	b.TotalAmountInPaise, _ = numAttr(item, "total_amount_in_paise")
+	b.LoyaltyPointsEarned, _ = numAttr(item, "loyalty_points_earned")
+	b.LoyaltyPointsRedeemed, _ = numAttr(item, "loyalty_points_redeemed")
+	b.LoyaltyDiscountApplied, _ = numAttr(item, "loyalty_discount_applied")
 	if l, ok := item["table_ids"].(*types.AttributeValueMemberL); ok {
 		for _, e := range l.Value {
 			if sv, ok := e.(*types.AttributeValueMemberS); ok {

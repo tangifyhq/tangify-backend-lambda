@@ -1,0 +1,10 @@
+{
+  "TableName": "tangify_points_wallet",
+  "BillingMode": "PAY_PER_REQUEST",
+  "AttributeDefinitions": [
+    { "AttributeName": "user_id", "AttributeType": "S" }
+  ],
+  "KeySchema": [
+    { "AttributeName": "user_id", "KeyType": "HASH" }
+  ]
+}

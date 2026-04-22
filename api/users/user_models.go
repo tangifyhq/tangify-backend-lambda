@@ -1,9 +1,10 @@
 package users
 
 const (
-	RoleWaiter  = "waiter"
-	RoleKitchen = "kitchen"
-	RoleAdmin   = "admin"
+	RoleWaiter   = "waiter"
+	RoleKitchen  = "kitchen"
+	RoleAdmin    = "admin"
+	RoleCustomer = "customer"
 )
 
 // TableNameUsers is the DynamoDB table for user accounts.
@@ -70,4 +71,9 @@ type BootstrapUserRequest struct {
 	Name     string `json:"name"`
 	Role     string `json:"role"`
 	Password string `json:"password"`
+}
+
+type CustomerOnboardRequest struct {
+	Phone string `json:"phone"`
+	Name  string `json:"name"`
 }
