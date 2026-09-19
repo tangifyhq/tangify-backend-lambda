@@ -1,0 +1,11 @@
+name = "api-proxy-cf-worker"
+main = "src/index.ts"
+compatibility_date = "2026-04-20"
+workers_dev = true
+
+# Lambda Function URL (no trailing slash). Host header is rewritten to this host.
+[vars]
+LAMBDA_ORIGIN = "https://vrhftl7y7adnf6z3f7qlldgyvy0cqniv.lambda-url.ap-south-1.on.aws"
+
+# Hostname / DNS is attached manually in the Cloudflare dashboard
+# (Workers → api-proxy-cf-worker → Domains & Routes, or DNS + Worker Route).

@@ -1,0 +1,24 @@
+name = "tangify-web-order-number-generator"
+main = "src/index.ts"
+compatibility_date = "2026-04-20"
+
+[[durable_objects.bindings]]
+name = "WEB_ORDER_COUNTER"
+class_name = "WebOrderYearCounter"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["WebOrderYearCounter"]
+
+# Dev worker uses a separate Durable Object namespace so local/testing
+# does not consume production web order sequence numbers.
+[env.dev]
+name = "tangify-web-order-number-generator-dev"
+
+[[env.dev.durable_objects.bindings]]
+name = "WEB_ORDER_COUNTER"
+class_name = "WebOrderYearCounter"
+
+[[env.dev.migrations]]
+tag = "v1"
+new_sqlite_classes = ["WebOrderYearCounter"]

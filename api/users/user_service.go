@@ -21,6 +21,14 @@ func NewService(repo *Repository, issueToken func(userID, name, role string) (st
 	return &Service{repo: repo, issueToken: issueToken}
 }
 
+// IssueCustomerToken signs a customer JWT (used by web WhatsApp login).
+func (s *Service) IssueCustomerToken(userID, name string) (string, error) {
+	if s == nil || s.issueToken == nil {
+		return "", fmt.Errorf("token issuer not configured")
+	}
+	return s.issueToken(userID, name, RoleCustomer)
+}
+
 func validRole(r string) bool {
 	switch r {
 	case RoleWaiter, RoleKitchen, RoleAdmin, RoleCustomer:

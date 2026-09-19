@@ -6,9 +6,5 @@
   ],
   "KeySchema": [
     { "AttributeName": "phone", "KeyType": "HASH" }
-  ],
-  "TimeToLiveSpecification": {
-    "AttributeName": "ttl",
-    "Enabled": true
-  }
+  ]
 }

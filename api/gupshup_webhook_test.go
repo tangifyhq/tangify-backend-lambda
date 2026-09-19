@@ -4,8 +4,30 @@ import "testing"
 
 func TestLoyaltyBalanceReplyText(t *testing.T) {
 	t.Parallel()
-	if got := loyaltyBalanceReplyText(42); got != "Your points balance is 42" {
+	if got := loyaltyBalanceReplyText(42); got != "Tangify: Your points balance is 42" {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestIsPointsBalanceQuery(t *testing.T) {
+	t.Parallel()
+	yes := []string{"points", "Points", "  POINTS  ", "points!", "my points", "points balance", "point"}
+	for _, s := range yes {
+		if !isPointsBalanceQuery(s) {
+			t.Fatalf("expected true for %q", s)
+		}
+	}
+	no := []string{
+		"",
+		"login: web",
+		"order_updates: web-ABC",
+		"I want to redeem points for tangify order. order: freeflow:abc",
+		"hello",
+	}
+	for _, s := range no {
+		if isPointsBalanceQuery(s) {
+			t.Fatalf("expected false for %q", s)
+		}
 	}
 }
 
@@ -15,6 +37,12 @@ func TestParseLoyaltySessionID(t *testing.T) {
 	want := "order-session:ord-1735123456789-k7x9abc"
 	if got != want {
 		t.Fatalf("parseLoyaltySessionID: got %q want %q", got, want)
+	}
+}
+
+func TestParseLoyaltySessionIDIgnoresWebLogin(t *testing.T) {
+	if got := parseLoyaltySessionID("login: web"); got != "" {
+		t.Fatalf("web login prefill must not be a loyalty session, got %q", got)
 	}
 }
 

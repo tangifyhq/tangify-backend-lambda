@@ -17,7 +17,9 @@ Go AWS Lambda backend for Tangify (users/auth + billing + kitchen + plating).
 │   ├── users/
 │   ├── billing/
 │   └── menu/
+├── api-proxy-cf-worker/         # CF Worker: api.tangify.in → Lambda (Host rewrite)
 ├── invoice-number-cf-worker/    # Cloudflare Worker for invoice numbers (prod + dev)
+├── tangify-web-order-number-generator/  # CF Worker for web order refs (prod + dev)
 ├── dynamodb/
 │   ├── users/                   # users table definition
 │   └── billing/                 # sessions/orders/bills table definitions
@@ -82,6 +84,8 @@ Also ensure SSM contains:
 
 ## Realtime events (Ably)
 
+Lambda publishes over Ably REST (HTTP). It never opens a Realtime websocket or subscribes. The REST client is created only on the first publish in a warm container; health, menu, and other non-publish routes do not touch Ably.
+
 When `ABLY_KEY` is configured, the API publishes:
 
 - `kitchen:{venue_id}`
@@ -89,6 +93,8 @@ When `ABLY_KEY` is configured, the API publishes:
   - `order.updated` on order updates
 - `waiter:{venue_id}`
   - `order.ready` when an order status becomes `ready`
+- `order_ops` (and optional `ABLY_CHANNEL_DEV`)
+  - `loyalty:wa-link` from the Gupshup inbound webhook
 
 If `ABLY_KEY` is missing, API behavior is unchanged and publish calls are skipped.
 

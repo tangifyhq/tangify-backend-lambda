@@ -1,0 +1,10 @@
+{
+  "TableName": "tangify-login-nonce",
+  "BillingMode": "PAY_PER_REQUEST",
+  "AttributeDefinitions": [
+    { "AttributeName": "nonce", "AttributeType": "S" }
+  ],
+  "KeySchema": [
+    { "AttributeName": "nonce", "KeyType": "HASH" }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "TableName": "tangify-web-orders",
+  "BillingMode": "PAY_PER_REQUEST",
+  "AttributeDefinitions": [
+    { "AttributeName": "order_ref", "AttributeType": "S" },
+    { "AttributeName": "user_id", "AttributeType": "S" },
+    { "AttributeName": "placed_at", "AttributeType": "N" }
+  ],
+  "KeySchema": [
+    { "AttributeName": "order_ref", "KeyType": "HASH" }
+  ],
+  "GlobalSecondaryIndexes": [
+    {
+      "IndexName": "GSI_UserPlaced",
+      "KeySchema": [
+        { "AttributeName": "user_id", "KeyType": "HASH" },
+        { "AttributeName": "placed_at", "KeyType": "RANGE" }
+      ],
+      "Projection": { "ProjectionType": "ALL" }
+    }
+  ]
+}

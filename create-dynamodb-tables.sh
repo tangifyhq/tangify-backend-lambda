@@ -71,9 +71,26 @@ create_one "${USERS_JSON_DIR}" tangify_users
 create_one "${LOYALTY_JSON_DIR}" tangify_points_wallet
 create_one "${LOYALTY_JSON_DIR}" dev-tangify_points_wallet
 create_one "${LOYALTY_JSON_DIR}" tangify_phone_otp
+if table_exists "tangify_phone_otp"; then
+  aws_ddb update-time-to-live \
+    --table-name "tangify_phone_otp" \
+    --time-to-live-specification "Enabled=true,AttributeName=ttl" \
+    >/dev/null || true
+fi
+
+WEBORDERS_JSON_DIR="${SCRIPT_DIR}/dynamodb/weborders"
+create_one "${WEBORDERS_JSON_DIR}" tangify-login-nonce
+if table_exists "tangify-login-nonce"; then
+  aws_ddb update-time-to-live \
+    --table-name "tangify-login-nonce" \
+    --time-to-live-specification "Enabled=true,AttributeName=ttl" \
+    >/dev/null || true
+fi
+create_one "${WEBORDERS_JSON_DIR}" tangify-web-orders
+create_one "${WEBORDERS_JSON_DIR}" tangify-web-addresses
 
 echo ""
-echo "Done. Tables: tangify_sessions, tangify_orders, tangify_bills, tangify_bills_with_line_items, dev-tangify_bills_with_line_items, tangify_users, tangify_points_wallet, dev-tangify_points_wallet, tangify_phone_otp"
+echo "Done. Tables: tangify_sessions, tangify_orders, tangify_bills, tangify_bills_with_line_items, dev-tangify_bills_with_line_items, tangify_users, tangify_points_wallet, dev-tangify_points_wallet, tangify_phone_otp, tangify-login-nonce, tangify-web-orders, tangify-web-addresses"
 if [[ -n "${ENDPOINT_URL:-}" ]]; then
   echo "List: aws dynamodb list-tables --endpoint-url \"${ENDPOINT_URL}\" --region ${REGION}"
 else

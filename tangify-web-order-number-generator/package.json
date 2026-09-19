@@ -1,0 +1,17 @@
+{
+  "name": "tangify-web-order-number-generator",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --env=\"\"",
+    "dev:worker": "wrangler dev --env dev",
+    "deploy": "wrangler deploy --env=\"\"",
+    "deploy:dev": "wrangler deploy --env dev"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260404.0",
+    "typescript": "^5.9.3",
+    "wrangler": "4.84.1"
+  }
+}

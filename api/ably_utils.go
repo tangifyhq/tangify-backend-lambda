@@ -6,14 +6,20 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/ably/ably-go/ably"
 )
 
 type AblyUtils struct {
-	realtime *ably.Realtime
-	enabled  bool
+	rest    *ably.REST
+	enabled bool
 }
+
+var (
+	ablyOnce   sync.Once
+	ablyShared *AblyUtils
+)
 
 func NewAblyUtils() (*AblyUtils, error) {
 	key := os.Getenv("ABLY_KEY")
@@ -21,11 +27,27 @@ func NewAblyUtils() (*AblyUtils, error) {
 		return &AblyUtils{enabled: false}, nil
 	}
 
-	client, err := ably.NewRealtime(ably.WithKey(key))
+	client, err := ably.NewREST(ably.WithKey(key))
 	if err != nil {
 		return nil, err
 	}
-	return &AblyUtils{realtime: client, enabled: true}, nil
+	return &AblyUtils{rest: client, enabled: true}, nil
+}
+
+// ablyPublisher returns a process-wide REST client, created on first publish.
+// Health, menu, and other non-publish routes never call this, so they open
+// no Ably connection. REST is HTTP-only; Lambda never subscribes.
+func ablyPublisher() *AblyUtils {
+	ablyOnce.Do(func() {
+		a, err := NewAblyUtils()
+		if err != nil {
+			fmt.Println("error initializing Ably REST client: ", err)
+			ablyShared = &AblyUtils{enabled: false}
+			return
+		}
+		ablyShared = a
+	})
+	return ablyShared
 }
 
 func (a *AblyUtils) PublishJSON(ctx context.Context, channelName string, eventName string, payload any) error {
@@ -36,7 +58,7 @@ func (a *AblyUtils) PublishJSON(ctx context.Context, channelName string, eventNa
 	if err != nil {
 		return err
 	}
-	ch := a.realtime.Channels.Get(channelName)
+	ch := a.rest.Channels.Get(channelName)
 	return ch.Publish(ctx, eventName, string(b))
 }
 

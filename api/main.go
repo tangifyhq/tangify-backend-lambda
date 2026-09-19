@@ -20,6 +20,7 @@ import (
 	"tangify-backend-lambda/menu"
 	"tangify-backend-lambda/reviews"
 	"tangify-backend-lambda/users"
+	"tangify-backend-lambda/weborders"
 )
 
 func getJwtClaims(jwtToken string, jwtSecret string) (*MyClaims, error) {
@@ -41,6 +42,7 @@ var whitelistedRoutes = []string{
 	"/api/v1/health",
 	"/api/v1/reviews/generate",
 	"/api/v1/webhooks/gupshup",
+	"/api/v1/web/auth/continue",
 }
 
 type AppContext struct {
@@ -53,7 +55,8 @@ func NewAppContext(claims *MyClaims) *AppContext {
 	}
 }
 func doJwtAuth(request events.LambdaFunctionURLRequest, jwtSecret string, appContext *AppContext) error {
-	token := strings.TrimPrefix(request.Headers["authorization"], "Bearer ")
+	token := strings.TrimPrefix(headerGet(request.Headers, "authorization"), "Bearer ")
+	token = strings.TrimSpace(token)
 	if token == "" {
 		fmt.Println("missing JWT")
 		return ErrMissingJWT
@@ -98,10 +101,6 @@ func headerGet(headers map[string]string, key string) string {
 
 func handler(ctx context.Context, request events.LambdaFunctionURLRequest) (events.LambdaFunctionURLResponse, error) {
 	awsUtils := NewAwsUtils()
-	ablyUtils, ablyErr := NewAblyUtils()
-	if ablyErr != nil {
-		fmt.Println("error initializing Ably client: ", ablyErr)
-	}
 	route := request.RawPath
 	method := request.RequestContext.HTTP.Method
 	fmt.Println("method & route: ", method, route)
@@ -183,7 +182,12 @@ func handler(ctx context.Context, request events.LambdaFunctionURLRequest) (even
 
 	usersService := users.NewService(users.NewRepository(dynamoDBClient), func(userID, name, role string) (string, error) {
 		j := NewJwtUtils(jwtSecret)
-		return j.GenerateJWT(userID, name, role, 24*time.Hour)
+		ttl := 24 * time.Hour
+		if role == users.RoleCustomer {
+			// Web ordering sessions should last across a shopping trip / next-day return.
+			ttl = 30 * 24 * time.Hour
+		}
+		return j.GenerateJWT(userID, name, role, ttl)
 	})
 	billRepo := billing.NewRepository(dynamoDBClient)
 	loyaltyRepo := loyalty.NewRepository(dynamoDBClient, pointsWalletTable)
@@ -191,7 +195,17 @@ func handler(ctx context.Context, request events.LambdaFunctionURLRequest) (even
 	walletProvider := loyalty.NewWalletProvider(loyaltyRepo, usersService)
 
 	if method == "POST" && route == "/api/v1/webhooks/gupshup" {
-		if err := handleGupshupInbound(ctx, request.Body, walletProvider, ablyUtils, commonUtils.GetCurrentTimestamp()); err != nil {
+		loginSvc := weborders.NewLoginService(
+			weborders.NewLoginNonceRepository(dynamoDBClient),
+			usersService,
+		)
+		if err := handleGupshupInbound(
+			ctx,
+			request.Body,
+			walletProvider,
+			loginSvc,
+			commonUtils.GetCurrentTimestamp(),
+		); err != nil {
 			fmt.Println("gupshup webhook error:", err)
 			return ApiResponse.Error(http.StatusInternalServerError, err.Error()), nil
 		}
@@ -283,6 +297,51 @@ func handler(ctx context.Context, request events.LambdaFunctionURLRequest) (even
 		return ApiResponse.Success(data), nil
 	}
 
+	if method == "POST" && route == "/api/v1/web/auth/continue" {
+		var body weborders.ContinueRequest
+		if err := json.Unmarshal([]byte(request.Body), &body); err != nil {
+			return ApiResponse.BadRequest("Invalid JSON body"), nil
+		}
+		code := body.Code()
+		if code == "" {
+			return ApiResponse.BadRequest("key required"), nil
+		}
+		loginSvc := weborders.NewLoginService(
+			weborders.NewLoginNonceRepository(dynamoDBClient),
+			usersService,
+		)
+		data, err := loginSvc.ConsumeNonce(ctx, code, commonUtils.GetCurrentTimestamp())
+		if err != nil {
+			fmt.Println("web login continue error: ", err)
+			return ApiResponse.Error(http.StatusInternalServerError, err.Error()), nil
+		}
+		if data == nil {
+			return ApiResponse.Error(http.StatusNotFound, "login link expired or already used"), nil
+		}
+		return ApiResponse.Success(data), nil
+	}
+
+	if method == "GET" && strings.HasPrefix(route, "/api/v1/web/orders/") {
+		ref := strings.TrimPrefix(route, "/api/v1/web/orders/")
+		ref = strings.Trim(ref, "/")
+		if ref == "" || strings.Contains(ref, "/") {
+			return ApiResponse.BadRequest("order_ref required"), nil
+		}
+		webOrderSvc := weborders.NewWebOrderService(
+			weborders.NewWebOrderRepository(dynamoDBClient),
+			weborders.NewRazorpayService(),
+		)
+		order, err := webOrderSvc.GetByRef(ctx, ref)
+		if err != nil {
+			fmt.Println("web order get error: ", err)
+			return ApiResponse.Error(http.StatusInternalServerError, err.Error()), nil
+		}
+		if order == nil {
+			return ApiResponse.Error(http.StatusNotFound, "order not found"), nil
+		}
+		return ApiResponse.Success(order), nil
+	}
+
 	if !slices.Contains(whitelistedRoutes, route) {
 		err = doJwtAuth(request, jwtSecret, appContext)
 		if err != nil {
@@ -370,7 +429,7 @@ func handler(ctx context.Context, request events.LambdaFunctionURLRequest) (even
 			return ApiResponse.Error(http.StatusBadRequest, err.Error()), nil
 		}
 		for _, ord := range data.Orders {
-			if pubErr := ablyUtils.PublishJSON(ctx, kitchenChannel(ord.VenueID), "order.created", ord); pubErr != nil {
+			if pubErr := ablyPublisher().PublishJSON(ctx, kitchenChannel(ord.VenueID), "order.created", ord); pubErr != nil {
 				fmt.Println("ably publish error (kitchen order.created): ", pubErr)
 			}
 		}
@@ -398,7 +457,7 @@ func handler(ctx context.Context, request events.LambdaFunctionURLRequest) (even
 		if err != nil {
 			return ApiResponse.Error(http.StatusBadRequest, err.Error()), nil
 		}
-		if pubErr := ablyUtils.PublishJSON(ctx, kitchenChannel(data.VenueID), "order.created", data); pubErr != nil {
+		if pubErr := ablyPublisher().PublishJSON(ctx, kitchenChannel(data.VenueID), "order.created", data); pubErr != nil {
 			fmt.Println("ably publish error (kitchen order.created): ", pubErr)
 		}
 		return ApiResponse.Success(data), nil
@@ -413,11 +472,11 @@ func handler(ctx context.Context, request events.LambdaFunctionURLRequest) (even
 		if err != nil {
 			return ApiResponse.Error(http.StatusBadRequest, err.Error()), nil
 		}
-		if pubErr := ablyUtils.PublishJSON(ctx, kitchenChannel(data.VenueID), "order.updated", data); pubErr != nil {
+		if pubErr := ablyPublisher().PublishJSON(ctx, kitchenChannel(data.VenueID), "order.updated", data); pubErr != nil {
 			fmt.Println("ably publish error (kitchen order.updated): ", pubErr)
 		}
 		if data.KitchenStatus == billing.KitchenStatusReady {
-			if pubErr := ablyUtils.PublishJSON(ctx, waiterChannel(data.VenueID), "order.ready", data); pubErr != nil {
+			if pubErr := ablyPublisher().PublishJSON(ctx, waiterChannel(data.VenueID), "order.ready", data); pubErr != nil {
 				fmt.Println("ably publish error (waiter order.ready): ", pubErr)
 			}
 		}
@@ -598,11 +657,11 @@ func handler(ctx context.Context, request events.LambdaFunctionURLRequest) (even
 		if err != nil {
 			return ApiResponse.Error(http.StatusBadRequest, err.Error()), nil
 		}
-		if pubErr := ablyUtils.PublishJSON(ctx, kitchenChannel(data.VenueID), "order.updated", data); pubErr != nil {
+		if pubErr := ablyPublisher().PublishJSON(ctx, kitchenChannel(data.VenueID), "order.updated", data); pubErr != nil {
 			fmt.Println("ably publish error (kitchen order.updated): ", pubErr)
 		}
 		if data.KitchenStatus == billing.KitchenStatusReady {
-			if pubErr := ablyUtils.PublishJSON(ctx, waiterChannel(data.VenueID), "order.ready", data); pubErr != nil {
+			if pubErr := ablyPublisher().PublishJSON(ctx, waiterChannel(data.VenueID), "order.ready", data); pubErr != nil {
 				fmt.Println("ably publish error (waiter order.ready): ", pubErr)
 			}
 		}
@@ -626,11 +685,11 @@ func handler(ctx context.Context, request events.LambdaFunctionURLRequest) (even
 		if err != nil {
 			return ApiResponse.Error(http.StatusBadRequest, err.Error()), nil
 		}
-		if pubErr := ablyUtils.PublishJSON(ctx, kitchenChannel(data.VenueID), "order.updated", data); pubErr != nil {
+		if pubErr := ablyPublisher().PublishJSON(ctx, kitchenChannel(data.VenueID), "order.updated", data); pubErr != nil {
 			fmt.Println("ably publish error (kitchen order.updated): ", pubErr)
 		}
 		if data.KitchenStatus == billing.KitchenStatusReady {
-			if pubErr := ablyUtils.PublishJSON(ctx, waiterChannel(data.VenueID), "order.ready", data); pubErr != nil {
+			if pubErr := ablyPublisher().PublishJSON(ctx, waiterChannel(data.VenueID), "order.ready", data); pubErr != nil {
 				fmt.Println("ably publish error (waiter order.ready): ", pubErr)
 			}
 		}
@@ -661,15 +720,194 @@ func handler(ctx context.Context, request events.LambdaFunctionURLRequest) (even
 		if err != nil {
 			return ApiResponse.Error(http.StatusBadRequest, err.Error()), nil
 		}
-		if pubErr := ablyUtils.PublishJSON(ctx, kitchenChannel(data.VenueID), "order.updated", data); pubErr != nil {
+		if pubErr := ablyPublisher().PublishJSON(ctx, kitchenChannel(data.VenueID), "order.updated", data); pubErr != nil {
 			fmt.Println("ably publish error (kitchen order.updated): ", pubErr)
 		}
 		if data.KitchenStatus == billing.KitchenStatusReady {
-			if pubErr := ablyUtils.PublishJSON(ctx, waiterChannel(data.VenueID), "order.ready", data); pubErr != nil {
+			if pubErr := ablyPublisher().PublishJSON(ctx, waiterChannel(data.VenueID), "order.ready", data); pubErr != nil {
 				fmt.Println("ably publish error (waiter order.ready): ", pubErr)
 			}
 		}
 		return ApiResponse.Success(data), nil
+	}
+
+	// --- Web ordering ---
+	if method == "POST" && route == "/api/v1/web/menu/publish" {
+		if appContext.JWTClaims == nil || !weborders.CanPublishRole(appContext.JWTClaims.Role) {
+			return ApiResponse.Error(http.StatusForbidden, "staff only"), nil
+		}
+		webSvc := weborders.NewService()
+		data, err := webSvc.PublishMenu(ctx, weborders.ConfigFromEnv())
+		if err != nil {
+			fmt.Println("web menu publish error: ", err)
+			return ApiResponse.Error(http.StatusInternalServerError, err.Error()), nil
+		}
+		return ApiResponse.Success(data), nil
+	}
+
+	if method == "GET" && route == "/api/v1/web/loyalty/wallet" {
+		if appContext.JWTClaims == nil {
+			return ApiResponse.Unauthorized("Unauthorized"), nil
+		}
+		data, err := walletProvider.GetWebWallet(ctx, appContext.JWTClaims.Identity)
+		if err != nil {
+			fmt.Println("web loyalty wallet error: ", err)
+			return ApiResponse.Error(http.StatusBadRequest, err.Error()), nil
+		}
+		return ApiResponse.Success(data), nil
+	}
+
+	if method == "POST" && route == "/api/v1/web/payments/razorpay/order" {
+		if appContext.JWTClaims == nil {
+			return ApiResponse.Unauthorized("Unauthorized"), nil
+		}
+		var body weborders.CreateRazorpayOrderRequest
+		if err := json.Unmarshal([]byte(request.Body), &body); err != nil {
+			return ApiResponse.BadRequest("Invalid JSON body"), nil
+		}
+		if body.Notes == nil {
+			body.Notes = map[string]string{}
+		}
+		body.Notes["user_id"] = appContext.JWTClaims.Identity
+		data, err := weborders.NewRazorpayService().CreateOrder(
+			ctx,
+			weborders.RazorpayConfigFromEnv(),
+			body,
+		)
+		if err != nil {
+			fmt.Println("razorpay create order error: ", err)
+			st := http.StatusBadRequest
+			if strings.Contains(err.Error(), "not configured") {
+				st = http.StatusInternalServerError
+			}
+			return ApiResponse.Error(st, err.Error()), nil
+		}
+		return ApiResponse.Success(data), nil
+	}
+
+	if method == "POST" && route == "/api/v1/web/delivery/quote" {
+		if appContext.JWTClaims == nil {
+			return ApiResponse.Unauthorized("Unauthorized"), nil
+		}
+		var body weborders.DeliveryQuoteRequest
+		if err := json.Unmarshal([]byte(request.Body), &body); err != nil {
+			return ApiResponse.BadRequest("Invalid JSON body"), nil
+		}
+		data, err := weborders.NewShiprocketService().QuoteDelivery(
+			ctx,
+			weborders.ShiprocketConfigFromEnv(),
+			body,
+		)
+		if err != nil {
+			fmt.Println("delivery quote error: ", err)
+			msg := err.Error()
+			st := http.StatusBadRequest
+			switch {
+			case strings.Contains(msg, "not configured"):
+				st = http.StatusInternalServerError
+				msg = "Delivery quotes are temporarily unavailable"
+			case strings.Contains(msg, "delivery_postcode"),
+				strings.Contains(msg, "latitude and longitude"):
+				// validation — keep message
+			default:
+				st = http.StatusBadGateway
+				msg = "Could not get delivery fee — try again"
+			}
+			return ApiResponse.Error(st, msg), nil
+		}
+		return ApiResponse.Success(data), nil
+	}
+
+	if method == "POST" && route == "/api/v1/web/payments/razorpay/verify" {
+		if appContext.JWTClaims == nil {
+			return ApiResponse.Unauthorized("Unauthorized"), nil
+		}
+		var body weborders.VerifyRazorpayPaymentRequest
+		if err := json.Unmarshal([]byte(request.Body), &body); err != nil {
+			return ApiResponse.BadRequest("Invalid JSON body"), nil
+		}
+		webOrderSvc := weborders.NewWebOrderService(
+			weborders.NewWebOrderRepository(dynamoDBClient),
+			weborders.NewRazorpayService(),
+		)
+		data, err := webOrderSvc.VerifyAndSave(
+			ctx,
+			weborders.RazorpayConfigFromEnv(),
+			appContext.JWTClaims.Identity,
+			body,
+			commonUtils.GetCurrentTimestamp(),
+		)
+		if err != nil {
+			fmt.Println("razorpay verify error: ", err)
+			return ApiResponse.Error(http.StatusBadRequest, err.Error()), nil
+		}
+		return ApiResponse.Success(data), nil
+	}
+
+	if method == "GET" && route == "/api/v1/web/orders" {
+		if appContext.JWTClaims == nil {
+			return ApiResponse.Unauthorized("Unauthorized"), nil
+		}
+		webOrderSvc := weborders.NewWebOrderService(
+			weborders.NewWebOrderRepository(dynamoDBClient),
+			weborders.NewRazorpayService(),
+		)
+		orders, err := webOrderSvc.ListForUser(ctx, appContext.JWTClaims.Identity)
+		if err != nil {
+			fmt.Println("web orders list error: ", err)
+			return ApiResponse.Error(http.StatusInternalServerError, err.Error()), nil
+		}
+		return ApiResponse.Success(map[string]any{"orders": orders}), nil
+	}
+
+	addrSvc := weborders.NewWebAddressService(weborders.NewWebAddressRepository(dynamoDBClient))
+
+	if method == "GET" && route == "/api/v1/web/addresses" {
+		if appContext.JWTClaims == nil {
+			return ApiResponse.Unauthorized("Unauthorized"), nil
+		}
+		list, err := addrSvc.List(ctx, appContext.JWTClaims.Identity)
+		if err != nil {
+			fmt.Println("web addresses list error: ", err)
+			return ApiResponse.Error(http.StatusInternalServerError, err.Error()), nil
+		}
+		return ApiResponse.Success(map[string]any{"addresses": list}), nil
+	}
+
+	if method == "PUT" && route == "/api/v1/web/addresses" {
+		if appContext.JWTClaims == nil {
+			return ApiResponse.Unauthorized("Unauthorized"), nil
+		}
+		var body weborders.UpsertWebAddressRequest
+		if err := json.Unmarshal([]byte(request.Body), &body); err != nil {
+			return ApiResponse.BadRequest("Invalid JSON body"), nil
+		}
+		addr, err := addrSvc.Upsert(ctx, appContext.JWTClaims.Identity, body)
+		if err != nil {
+			fmt.Println("web address upsert error: ", err)
+			return ApiResponse.Error(http.StatusBadRequest, err.Error()), nil
+		}
+		return ApiResponse.Success(addr), nil
+	}
+
+	if method == "DELETE" && strings.HasPrefix(route, "/api/v1/web/addresses/") {
+		if appContext.JWTClaims == nil {
+			return ApiResponse.Unauthorized("Unauthorized"), nil
+		}
+		id := strings.TrimPrefix(route, "/api/v1/web/addresses/")
+		id = strings.Trim(id, "/")
+		if id == "" || strings.Contains(id, "/") {
+			return ApiResponse.BadRequest("address_id required"), nil
+		}
+		if err := addrSvc.Delete(ctx, appContext.JWTClaims.Identity, id); err != nil {
+			fmt.Println("web address delete error: ", err)
+			st := http.StatusBadRequest
+			if strings.Contains(err.Error(), "not found") {
+				st = http.StatusNotFound
+			}
+			return ApiResponse.Error(st, err.Error()), nil
+		}
+		return ApiResponse.Success(map[string]bool{"deleted": true}), nil
 	}
 
 	return ApiResponse.Success(map[string]string{"message": "Hello, World!"}), nil

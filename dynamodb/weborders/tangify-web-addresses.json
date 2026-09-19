@@ -1,0 +1,12 @@
+{
+  "TableName": "tangify-web-addresses",
+  "BillingMode": "PAY_PER_REQUEST",
+  "AttributeDefinitions": [
+    { "AttributeName": "user_id", "AttributeType": "S" },
+    { "AttributeName": "address_id", "AttributeType": "S" }
+  ],
+  "KeySchema": [
+    { "AttributeName": "user_id", "KeyType": "HASH" },
+    { "AttributeName": "address_id", "KeyType": "RANGE" }
+  ]
+}

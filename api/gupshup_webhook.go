@@ -10,6 +10,7 @@ import (
 
 	"tangify-backend-lambda/loyalty"
 	"tangify-backend-lambda/users"
+	"tangify-backend-lambda/weborders"
 )
 
 var loyaltySessionIDRe = regexp.MustCompile(`(?i)order:\s*(\S+)`)
@@ -157,11 +158,24 @@ func parseLoyaltySessionID(text string) string {
 	return strings.TrimSpace(m[1])
 }
 
+// isPointsBalanceQuery is true for short balance check messages like "points".
+func isPointsBalanceQuery(text string) bool {
+	t := strings.ToLower(strings.TrimSpace(text))
+	t = strings.Join(strings.Fields(t), " ")
+	t = strings.Trim(t, "!.?।")
+	switch t {
+	case "points", "point", "my points", "points balance", "balance":
+		return true
+	default:
+		return false
+	}
+}
+
 func handleGupshupInbound(
 	ctx context.Context,
 	body string,
 	wallet *loyalty.WalletProvider,
-	ably *AblyUtils,
+	webLogin *weborders.LoginService,
 	now int64,
 ) error {
 	sender, text := parseGupshupInboundText(body)
@@ -169,8 +183,17 @@ func handleGupshupInbound(
 		log.Println("gupshup inbound: ignored (no sender or text)")
 		return nil
 	}
+	if weborders.IsWebLoginText(text) {
+		return handleWebLoginInbound(ctx, sender, webLogin, now)
+	}
+	if ref := weborders.ParseOrderUpdatesRef(text); ref != "" {
+		return handleOrderUpdatesInbound(ctx, sender, ref)
+	}
 	sessionID := parseLoyaltySessionID(text)
 	if sessionID == "" {
+		if isPointsBalanceQuery(text) {
+			return handlePointsBalanceInbound(ctx, sender, wallet, now)
+		}
 		log.Println("gupshup inbound: ignored (no session id in text)")
 		return nil
 	}
@@ -195,6 +218,7 @@ func handleGupshupInbound(
 	if err := sendLoyaltyBalanceReply(ctx, sender, view.PointsBalance); err != nil {
 		log.Println("gupshup inbound: balance reply:", err)
 	}
+	ably := ablyPublisher()
 	if ably == nil || !ably.enabled {
 		log.Println("gupshup inbound: Ably disabled, skip publish")
 		return nil
@@ -206,8 +230,60 @@ func handleGupshupInbound(
 	return nil
 }
 
+func handlePointsBalanceInbound(
+	ctx context.Context,
+	sender string,
+	wallet *loyalty.WalletProvider,
+	now int64,
+) error {
+	if wallet == nil {
+		log.Println("gupshup inbound: points query ignored (wallet nil)")
+		return nil
+	}
+	canon, err := users.CanonicalPhone(sender)
+	if err != nil {
+		log.Println("gupshup inbound: points query invalid phone:", err)
+		return nil
+	}
+	view, err := wallet.GetOrCreateByPhone(ctx, canon, now)
+	if err != nil {
+		return err
+	}
+	if err := sendLoyaltyBalanceReply(ctx, sender, view.PointsBalance); err != nil {
+		return err
+	}
+	log.Printf("gupshup inbound: points balance phone=%s balance=%d", canon, view.PointsBalance)
+	return nil
+}
+
+func handleWebLoginInbound(ctx context.Context, sender string, webLogin *weborders.LoginService, now int64) error {
+	if webLogin == nil {
+		log.Println("gupshup inbound: web login ignored (service nil)")
+		return nil
+	}
+	nonce, err := webLogin.StartFromWhatsApp(ctx, sender, now)
+	if err != nil {
+		return err
+	}
+	msg := weborders.ContinueLinkMessage(weborders.OrderPublicBaseURL(), nonce)
+	if err := sendGupshupTextMessage(ctx, sender, msg); err != nil {
+		return err
+	}
+	log.Printf("gupshup inbound: web login nonce=%s", nonce)
+	return nil
+}
+
+func handleOrderUpdatesInbound(ctx context.Context, sender, orderRef string) error {
+	msg := weborders.OrderDetailsLinkMessage(weborders.OrderPublicBaseURL(), orderRef)
+	if err := sendGupshupTextMessage(ctx, sender, msg); err != nil {
+		return err
+	}
+	log.Printf("gupshup inbound: order updates link ref=%s", orderRef)
+	return nil
+}
+
 func loyaltyBalanceReplyText(balance int64) string {
-	return fmt.Sprintf("Your points balance is %d", balance)
+	return fmt.Sprintf("Tangify: Your points balance is %d", balance)
 }
 
 func sendLoyaltyBalanceReply(ctx context.Context, destination string, balance int64) error {
