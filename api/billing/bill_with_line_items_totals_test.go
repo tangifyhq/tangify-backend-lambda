@@ -133,3 +133,50 @@ func TestComputeBillTotals_customerRequiredForPoints(t *testing.T) {
 		t.Fatalf("err=%v", err)
 	}
 }
+
+func TestComputeBillTotals_recomputesTaxAfterDiscount(t *testing.T) {
+	// Mirrors POS bill 2026-000703: subtotal ₹827, 70 pts (₹210), tax on taxable.
+	items := []LineItemV0{{Name: "Meal", Quantity: 1, Price: 82700}}
+	discounts := []DiscountType{{
+		ID: "points", Type: DiscountTypePoints, Amount: 21000, Description: "70 points",
+	}}
+	// Client sent stale tax on full subtotal (the bug).
+	staleTaxes := []TaxType{
+		{ID: "cgst", Name: "CGST", RateInBps: 250, AmountInPaise: 2068},
+		{ID: "sgst", Name: "SGST", RateInBps: 250, AmountInPaise: 2068},
+		{ID: "round_off", Name: "Round off", RateInBps: 0, AmountInPaise: 64},
+	}
+
+	got, err := computeBillTotals(items, discounts, staleTaxes, "cust-1", 70, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.TotalDiscountInPaise != 21000 {
+		t.Fatalf("discount=%d want=21000", got.TotalDiscountInPaise)
+	}
+	// taxable 61700; CGST/SGST = round(61700*0.025)=1543 each
+	var cgst, sgst, roundOff int64
+	for _, tax := range got.Taxes {
+		switch tax.ID {
+		case "cgst":
+			cgst = tax.AmountInPaise
+		case "sgst":
+			sgst = tax.AmountInPaise
+		case "round_off":
+			roundOff = tax.AmountInPaise
+		}
+	}
+	if cgst != 1543 || sgst != 1543 {
+		t.Fatalf("cgst=%d sgst=%d want 1543 each", cgst, sgst)
+	}
+	// preRound = 61700+1543+1543 = 64786 → ceil ₹648 → roundOff 14
+	if roundOff != 14 {
+		t.Fatalf("roundOff=%d want=14", roundOff)
+	}
+	if got.TotalAmountInPaise != 64800 {
+		t.Fatalf("total=%d want=64800", got.TotalAmountInPaise)
+	}
+	if got.TotalTaxInPaise != 1543+1543+14 {
+		t.Fatalf("tax=%d", got.TotalTaxInPaise)
+	}
+}

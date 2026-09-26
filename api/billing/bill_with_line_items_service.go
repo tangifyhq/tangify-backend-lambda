@@ -151,6 +151,7 @@ func (s *BillWithLineItemsService) create(
 	bill.CreatedAt = now
 	bill.UpdatedAt = now
 	bill.Discounts = totals.Discounts
+	bill.Taxes = totals.Taxes
 	bill.TotalDiscountInPaise = totals.TotalDiscountInPaise
 	bill.TotalTaxInPaise = totals.TotalTaxInPaise
 	bill.TotalAmountInPaise = totals.TotalAmountInPaise
@@ -244,6 +245,7 @@ func (s *BillWithLineItemsService) update(
 	bill.CreatedAt = existing.CreatedAt
 	bill.UpdatedAt = now
 	bill.Discounts = totals.Discounts
+	bill.Taxes = totals.Taxes
 	bill.TotalDiscountInPaise = totals.TotalDiscountInPaise
 	bill.TotalTaxInPaise = totals.TotalTaxInPaise
 	bill.TotalAmountInPaise = totals.TotalAmountInPaise

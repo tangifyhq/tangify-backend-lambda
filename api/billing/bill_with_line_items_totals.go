@@ -3,6 +3,7 @@ package billing
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -86,10 +87,53 @@ func lineItemsSubtotalPaise(items []LineItemV0) int64 {
 
 type computedTotals struct {
 	Discounts            []DiscountType
+	Taxes                []TaxType
 	TotalDiscountInPaise int64
 	TotalTaxInPaise      int64
 	TotalAmountInPaise   int64
 	PointsRedeemed       int64
+}
+
+// recomputeTaxesAfterDiscount sets rate-based tax amounts on (subtotal − discount)
+// and ceil-rupee round-off so POS UI and DynamoDB stay aligned.
+func recomputeTaxesAfterDiscount(taxes []TaxType, taxablePaise int64) []TaxType {
+	if len(taxes) == 0 {
+		return nil
+	}
+	if taxablePaise < 0 {
+		taxablePaise = 0
+	}
+	out := make([]TaxType, 0, len(taxes)+1)
+	var rateTaxTotal int64
+	hasRoundOff := false
+	for _, t := range taxes {
+		id := strings.ToLower(strings.TrimSpace(t.ID))
+		if id == "round_off" || (t.RateInBps == 0 && strings.Contains(strings.ToLower(t.Name), "round")) {
+			hasRoundOff = true
+			continue
+		}
+		next := t
+		if t.RateInBps > 0 {
+			next.AmountInPaise = int64(math.Round(float64(taxablePaise) * float64(t.RateInBps) / 10000.0))
+		}
+		rateTaxTotal += next.AmountInPaise
+		out = append(out, next)
+	}
+	preRound := taxablePaise + rateTaxTotal
+	payableRupees := int64(math.Ceil(float64(preRound) / 100.0))
+	roundOff := payableRupees*100 - preRound
+	if roundOff < 0 {
+		roundOff = 0
+	}
+	if roundOff > 0 || hasRoundOff {
+		out = append(out, TaxType{
+			ID:            "round_off",
+			Name:          "Round off",
+			RateInBps:     0,
+			AmountInPaise: roundOff,
+		})
+	}
+	return out
 }
 
 func computeBillTotals(
@@ -177,12 +221,15 @@ func computeBillTotals(
 	}
 
 	totalDiscount = capDiscount(totalDiscount, subtotal)
-	totalTax := sumTaxes(taxes)
+	taxable := subtotal - totalDiscount
+	outTaxes := recomputeTaxesAfterDiscount(taxes, taxable)
+	totalTax := sumTaxes(outTaxes)
 	return computedTotals{
 		Discounts:            outDiscounts,
+		Taxes:                outTaxes,
 		TotalDiscountInPaise: totalDiscount,
 		TotalTaxInPaise:      totalTax,
-		TotalAmountInPaise:   subtotal - totalDiscount + totalTax,
+		TotalAmountInPaise:   taxable + totalTax,
 		PointsRedeemed:       pointsRedeemed,
 	}, nil
 }
